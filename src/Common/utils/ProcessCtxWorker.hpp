@@ -89,9 +89,6 @@ public:
 		}
 		return false;
 	}
-
-protected:
-	CAVL<CHashString> m_processes2watch;
 };
 
 #endif //__PROCESSCTXWORKER_H__

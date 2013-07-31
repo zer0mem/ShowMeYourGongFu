@@ -70,7 +70,7 @@ public:
 		}
 	}
 
-	//TODO : implement auto_ptr !
+	//TODO : implement shared_ptr !
 	__checkReturn
 	bool GetProcess(
 		__in HANDLE processId,

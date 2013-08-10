@@ -11,6 +11,14 @@
 #include "../Common/utils/AVL.hpp"
 #include "../Common/utils/HashString.hpp"
 
+enum
+{
+	ExtTrapTrace,
+	ExtInfo,
+	ExtMain,
+	ExtCount
+};
+
 class CConstants : 
 	public CSingleton<CConstants>
 {
@@ -19,8 +27,11 @@ class CConstants :
 	CConstants() : 
 		CSingleton(m_instance)
 	{
-		for (size_t i = 0; i < _countof(ApplicationsToFuzz); i++)
-			(void)m_applicationsToFuzzAVL.Insert(&CHashString(ApplicationsToFuzz[i]));
+		for (size_t i = 0; i < _countof(m_applicationsToFuzz); i++)
+			(void)m_applicationsToFuzzAVL.Insert(&CHashString(m_applicationsToFuzz[i]));
+
+		for (size_t i = 0; i < _countof(m_inAppModules); i++)
+			(void)m_inAppModulesAVL.Insert(&CHashString(m_inAppModules[i]));
 	}
 
 public:
@@ -28,10 +39,29 @@ public:
 	{
 		return m_applicationsToFuzzAVL;
 	}
+
+	CAVL<CHashString>& InAppModulesAVL()
+	{
+		return m_inAppModulesAVL;
+	}
+	
+	static 
+	const CHAR* InAppExtRoutines(
+		__in size_t ind
+		)
+	{
+		if (ind < _countof(m_inAppExtRoutines))
+			return m_inAppExtRoutines[ind].Buffer;
+
+		return NULL;
+	}
 	
 protected:
 	CAVL<CHashString> m_applicationsToFuzzAVL;
-	static const UNICODE_STRING ApplicationsToFuzz[1];
+	CAVL<CHashString> m_inAppModulesAVL;
+	static const UNICODE_STRING m_applicationsToFuzz[2];
+	static const UNICODE_STRING m_inAppModules[1];
+	static const STRING m_inAppExtRoutines[ExtCount];
 };
 
 #endif //__CONSTANTS_H__

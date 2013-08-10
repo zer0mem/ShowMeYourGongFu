@@ -11,8 +11,6 @@
 #include "Undoc.h"
 #include "Vad.h"
 
-#define MEMBER(process, member) ((ULONG_PTR)(process) + (ULONG_PTR)(member))
-
 //or use namespace ? http://winterdom.com/dev/cpp/nspaces
 
 class CUndoc
@@ -71,42 +69,42 @@ public:
 	static 
 	MM_AVL_TABLE* VadRoot(__in const PEPROCESS eprocess)
 	{
-		return reinterpret_cast<MM_AVL_TABLE*>(MEMBER(eprocess, m_eprocessVadRoot));
+		return MEMBER(MM_AVL_TABLE, eprocess, m_eprocessVadRoot);
 	}
 
 	__forceinline
 	static
 	EX_PUSH_LOCK* AddressCreationLock(__in const PEPROCESS eprocess)
 	{
-		return reinterpret_cast<EX_PUSH_LOCK*>(MEMBER(eprocess, m_eprocessAddressCreationLock));
+		return MEMBER(EX_PUSH_LOCK, eprocess, m_eprocessAddressCreationLock);
 	}
 
 	__forceinline
 	static
 	EX_PUSH_LOCK* WorkingSetMutex(__in const PEPROCESS eprocess)
 	{ 
-		return reinterpret_cast<EX_PUSH_LOCK*>(MEMBER(eprocess, m_eprocessWorkingSetMutex));
+		return MEMBER(EX_PUSH_LOCK, eprocess, m_eprocessWorkingSetMutex);
 	}
 
 	__forceinline
 	static
 	VM_FLAGS* Flags(__in const PEPROCESS eprocess)
 	{
-		return reinterpret_cast<VM_FLAGS*>(MEMBER(eprocess, m_eprocessVMFlags));
+		return MEMBER(VM_FLAGS, eprocess, m_eprocessVMFlags);
 	}
 
 	__forceinline
 	static
 	SAME_THREAD_APC_FLAGS* SameThreadApcFlags(__in const PETHREAD ethread)
 	{
-		return reinterpret_cast<SAME_THREAD_APC_FLAGS*>(MEMBER(ethread, m_ethreadSameThreadApcFlags));
+		return MEMBER(SAME_THREAD_APC_FLAGS, ethread, m_ethreadSameThreadApcFlags);
 	}
 
 	__forceinline
 	static
 	AVL_INFO* AVLInfo(__in const MM_AVL_TABLE* avl)
 	{
-		return reinterpret_cast<AVL_INFO*>(MEMBER(avl, m_avlTableInfo));
+		return MEMBER(AVL_INFO, avl, m_avlTableInfo);
 	}
 
 	__forceinline
@@ -120,63 +118,49 @@ public:
 	static
 	MMVAD_SHORT* BalancedRoot(__in const MM_AVL_TABLE* vadRoot)
 	{
-		return reinterpret_cast<MMVAD_SHORT*>(MEMBER(vadRoot, m_avlTableLinks));
+		return MEMBER(MMVAD_SHORT, vadRoot, m_avlTableLinks);
 	}
 
 	__forceinline
 	static
 	MMVAD_SHORT* Parent(__in const MMVAD_SHORT* vadNode)
 	{
-		return reinterpret_cast<MMVAD_SHORT*>(MEMBER(vadNode, m_vadParent));
+		return MEMBER(MMVAD_SHORT, vadNode, m_vadParent);
 	}
 
 	__forceinline
 	static
 	MMVAD_SHORT* LeftChild(__in const MMVAD_SHORT* vadNode)
 	{
-		return reinterpret_cast<MMVAD_SHORT*>(MEMBER(vadNode, m_vadLeftChild));
+		return MEMBER(MMVAD_SHORT, vadNode, m_vadLeftChild);
 	}
 
 	__forceinline
 	static
 	MMVAD_SHORT* RightChild(__in const MMVAD_SHORT* vadNode)
 	{
-		return reinterpret_cast<MMVAD_SHORT*>(MEMBER(vadNode, m_vadRightChild));
+		return MEMBER(MMVAD_SHORT, vadNode, m_vadRightChild);
 	}
 
 	__forceinline
 	static
-	ULONG StartingVpn(__in const MMVAD_SHORT* vadNode)
+	ULONG* StartingVpn(__in const MMVAD_SHORT* vadNode)
 	{
-		return *reinterpret_cast<ULONG*>(MEMBER(vadNode, m_vadStartingVpn));
+		return MEMBER(ULONG, vadNode, m_vadStartingVpn);
 	}
 
 	__forceinline
 	static
-	ULONG EndingVpn(__in const MMVAD_SHORT* vadNode)
+	ULONG* EndingVpn(__in const MMVAD_SHORT* vadNode)
 	{
-		return *reinterpret_cast<ULONG*>(MEMBER(vadNode, m_vadEndingVpn));
-	}
-
-	__forceinline
-	static
-	ULONG* StartingVpnPtr(__in const MMVAD_SHORT* vadNode)
-	{
-		return reinterpret_cast<ULONG*>(MEMBER(vadNode, m_vadStartingVpn));
-	}
-
-	__forceinline
-	static
-	ULONG* EndingVpnPtr(__in const MMVAD_SHORT* vadNode)
-	{
-		return reinterpret_cast<ULONG*>(MEMBER(vadNode, m_vadEndingVpn));
+		return MEMBER(ULONG, vadNode, m_vadEndingVpn);
 	}
 
 	__forceinline
 	static
 	MMVAD_FLAGS* Flags(__in const MMVAD_SHORT* vadNode)
 	{
-		return reinterpret_cast<MMVAD_FLAGS*>(MEMBER(vadNode, m_vadFlags));
+		return MEMBER(MMVAD_FLAGS, vadNode, m_vadFlags);
 	}
 
 protected:

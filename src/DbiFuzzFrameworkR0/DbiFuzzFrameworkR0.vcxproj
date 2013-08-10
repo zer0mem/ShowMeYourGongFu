@@ -171,7 +171,7 @@
       <AdditionalOptions>/safeseh:no /INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
       <AdditionalDependencies>ntoskrnl.lib;hal.lib;libcmtd.lib;FltMgr.lib;../Cronos/Debug-amd64/Cronos.lib;../HyperVisor/Debug-amd64/HyperVisor.lib;C:\Program Files (x86)\Windows Kits\8.0\Lib\win7\km\x64\procgrp.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
-      <AdditionalLibraryDirectories>C:\WinDDK\7600.16385.1\lib\crt\amd64;C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\lib;C:\Program Files %28x86%29\Microsoft SDKs\Windows\v7.0A\Lib\x64;C:\Program Files %28x86%29\Windows Kits\8.0\Lib\win7\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\WinDDK\7600.16385.1\lib\wlh\amd64;C:\WinDDK\7600.16385.1\lib\crt\amd64;C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\lib;C:\Program Files %28x86%29\Microsoft SDKs\Windows\v7.0A\Lib\x64;C:\Program Files %28x86%29\Windows Kits\8.0\Lib\win7\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Native</SubSystem>
@@ -280,30 +280,36 @@
     <ClCompile Include="src\DbiMonitor.cpp" />
     <ClCompile Include="DriverEntry.cpp" />
     <ClCompile Include="src\Process2Fuzz.cpp" />
+    <ClCompile Include="src\ThreadEvent.cpp" />
     <ClCompile Include="StdAfx.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\base\Common.h" />
     <ClInclude Include="..\Common\base\ComparableId.hpp" />
     <ClInclude Include="..\Common\base\instrinsics.h" />
+    <ClInclude Include="..\Common\base\Shared.h" />
     <ClInclude Include="..\Common\base\Singleton.hpp" />
     <ClInclude Include="..\Common\CPU\msr.h" />
+    <ClInclude Include="..\Common\FastCall\FastCall.h" />
     <ClInclude Include="..\Common\Kernel\Apc.h" />
     <ClInclude Include="..\Common\Kernel\IRQL.hpp" />
     <ClInclude Include="..\Common\Kernel\Lock.hpp" />
     <ClInclude Include="..\Common\Kernel\MemoryMapping.h" />
     <ClInclude Include="..\Common\Kernel\MMU.h" />
     <ClInclude Include="..\Common\Kernel\MMU.hpp" />
-    <ClInclude Include="..\Common\Kernel\ProcessCtx.hpp" />
+    <ClInclude Include="..\Common\Kernel\Process.hpp" />
     <ClInclude Include="..\Common\Kernel\Thread.hpp" />
     <ClInclude Include="..\Common\utils\AVL.hpp" />
     <ClInclude Include="..\Common\utils\BinTreeWalker.hpp" />
+    <ClInclude Include="..\Common\utils\DelayLoadEntryPointHook.hpp" />
+    <ClInclude Include="..\Common\utils\ColdPatcher.hpp" />
     <ClInclude Include="..\Common\utils\CSYSCALL.h" />
     <ClInclude Include="..\Common\utils\CSYSCALL.hpp" />
-    <ClInclude Include="..\Common\utils\CSyscallCallbacks.hpp" />
+    <ClInclude Include="..\Common\utils\SyscallCallbacks.hpp" />
     <ClInclude Include="..\Common\utils\HashString.hpp" />
     <ClInclude Include="..\Common\utils\LockedContainers.hpp" />
     <ClInclude Include="..\Common\utils\MemoryRange.h" />
+    <ClInclude Include="..\Common\utils\PE.hpp" />
     <ClInclude Include="..\Common\utils\ProcessCtx.h" />
     <ClInclude Include="..\Common\utils\ProcessCtxWorker.hpp" />
     <ClInclude Include="..\Common\utils\ProcessMonitor.hpp" />
@@ -317,6 +323,7 @@
     <ClInclude Include="drv_common.h" />
     <ClInclude Include="src\DbiMonitor.h" />
     <ClInclude Include="src\Process2Fuzz.h" />
+    <ClInclude Include="src\ThreadEvent.h" />
     <ClInclude Include="StdAfx.h" />
   </ItemGroup>
   <ItemGroup>
@@ -326,6 +333,7 @@
     <MASM Include="..\Common\amd64\_instrinsics.asm">
       <FileType>Document</FileType>
     </MASM>
+    <MASM Include="src\amd64\ext_interface.asm" />
     <MASM Include="src\amd64\_syscall.asm" />
   </ItemGroup>
   <ItemGroup>

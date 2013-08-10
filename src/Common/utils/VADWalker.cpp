@@ -20,7 +20,7 @@
 
 class CAutoVadShort
 {
-#define MIN_VAD_ALLOC_SIZE (max((size_t)CUndoc::EndingVpnPtr(NULL), (size_t)CUndoc::StartingVpnPtr(NULL)) + sizeof(*CUndoc::StartingVpnPtr(NULL)))
+#define MIN_VAD_ALLOC_SIZE (max((size_t)CUndoc::EndingVpn(NULL), (size_t)CUndoc::StartingVpn(NULL)) + sizeof(*CUndoc::StartingVpn(NULL)))
 public:
 	CAutoVadShort(
 		__in const void* startAddr,
@@ -32,8 +32,8 @@ public:
 			if (!endAddr)
 				endAddr = startAddr;
 
-			*CUndoc::StartingVpnPtr(m_autoFind) = (ULONG)((ULONG_PTR)startAddr >> PAGE_SHIFT);
-			*CUndoc::EndingVpnPtr(m_autoFind) = (ULONG)((ULONG_PTR)endAddr >> PAGE_SHIFT);
+			*CUndoc::StartingVpn(m_autoFind) = (ULONG)((ULONG_PTR)startAddr >> PAGE_SHIFT);
+			*CUndoc::EndingVpn(m_autoFind) = (ULONG)((ULONG_PTR)endAddr >> PAGE_SHIFT);
 		}
 	}
 
@@ -258,8 +258,8 @@ __checkReturn bool CVADScanLock::IsLocked()
 CVadNodeMemRange::CVadNodeMemRange( 
 	__in const VAD_SHORT* vadNode 
 	) : CMemoryRange(
-			(BYTE*)EXPAND(CUndoc::StartingVpn(vadNode)), 
-			EXPAND(CUndoc::EndingVpn(vadNode) - CUndoc::StartingVpn(vadNode) + 1),
+			reinterpret_cast<BYTE*>(EXPAND(*CUndoc::StartingVpn(vadNode))), 
+			EXPAND(*CUndoc::EndingVpn(vadNode) - *CUndoc::StartingVpn(vadNode) + 1),
 			*reinterpret_cast<const ULONG*>(CUndoc::Flags(vadNode))
 			)
 {

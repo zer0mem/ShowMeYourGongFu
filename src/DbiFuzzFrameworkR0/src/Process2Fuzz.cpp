@@ -6,89 +6,13 @@
 #include "stdafx.h"
 
 #include "Process2Fuzz.h"
-#include "Common/Constants.h"
 
 #include "../../Common/utils/HashString.hpp"
 #include "../../Common/Kernel/MMU.hpp"
 #include "../../Common/utils/VADWalker.h"
 
-EXTERN_C void syscall_instr_prologue();
-EXTERN_C void syscall_instr_epilogue();
-
-//need to call _dynamic_initializer_for__cSyscallSize_
-//static const size_t cSyscallSize = (ULONG_PTR)syscall_instr_epilogue - (ULONG_PTR)syscall_instr_prologue;
-#define cSyscallSize ((ULONG_PTR)syscall_instr_epilogue - (ULONG_PTR)syscall_instr_prologue)
-
-EXTERN_C ULONG_PTR* get_ring3_rsp();
-
-//-----------------------------------------------------------------
-// ****************** DEFINE THREAD INFO STRUCTS ******************
-//-----------------------------------------------------------------
-
-struct FUZZ_THREAD_INFO : 
-	public THREAD_INFO
-{
-	MEMORY_INFO MemoryInfo;
-	ULONG_PTR GeneralPurposeContext[REG_COUNT];
-
-	FUZZ_THREAD_INFO() : 
-		THREAD_INFO(PsGetCurrentThreadId(), PsGetCurrentProcessId())
-	{
-		WaitForSyscallCallback = false;
-	}
-
-	FUZZ_THREAD_INFO(
-		__in HANDLE threadId,
-		__in HANDLE parentProcessId
-		) : THREAD_INFO(threadId, parentProcessId)
-	{
-		WaitForSyscallCallback = false;
-	}
-
-	__forceinline
-	__checkReturn
-	bool WaitForSyscallEpilogue()
-	{
-		return WaitForSyscallCallback;
-	}
-
-	void SetCallbackEpilogue(
-		__in ULONG_PTR reg[REG_COUNT],
-		__in void* memory,
-		__in size_t size,
-		__in bool write,
-		__in_opt void* pageFault = NULL
-		)
-
-	{
-		WaitForSyscallCallback = true;
-
-		*GeneralPurposeContext = *reg;
-		MemoryInfo.SetInfo(memory, size, write);
-
-//invoke SYSCALL again after syscall is finished!
-		reg[RCX] -= cSyscallSize;
-/*
-		ULONG_PTR* r3stack = get_ring3_rsp();
-		//set return againt to SYSCALL instr
-		*r3stack -= cSyscallSize;
-*/
-	}
-
-	__forceinline 
-	void EpilogueProceeded()
-	{
-		WaitForSyscallCallback = false;
-	}
-
-protected:
-	bool WaitForSyscallCallback;
-};
-
-
-//-------------------------------------------------------------------
-// ****************** CProcess2Fuzz implementation ******************
-//-------------------------------------------------------------------
+#include "../../Common/utils/PE.hpp"
+#include "../../Common/FastCall/FastCall.h"
 
 CProcess2Fuzz::CProcess2Fuzz( 
 	__inout PEPROCESS process, 
@@ -152,10 +76,36 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 	__in IMAGE_INFO* imageInfo
 	)
 {
-	(void)m_loadedImgs.Push(LOADED_IMAGE(imageInfo));
-
 	if (!imageInfo->SystemModeImage)
 	{
+		if (!m_epHook.IsInitialized())
+		{
+			KeBreak();
+			m_epHook.InitBase(imageInfo->ImageBase);
+		}
+
+		(void)m_loadedImgs.Push(LOADED_IMAGE(imageInfo));
+
+		UNICODE_STRING image_name;
+
+		if (ResolveImageName(fullImageName->Buffer, 
+			fullImageName->Length / sizeof(fullImageName->Buffer[0]), 
+			&image_name))
+		{
+			if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(image_name)))
+			{
+				CPE pe(imageInfo->ImageBase);
+				const void* func_name;
+				for (size_t i = 0;
+					(func_name = CConstants::InAppExtRoutines(i));
+					i++)
+				{
+					m_extRoutines[i] = pe.GetProcAddress(func_name);
+				}
+				//setup last function as hook
+				m_epHook.SetUpHook(m_extRoutines[ExtMain]);
+			}
+		}
 		DbgPrint("\n @ImageNotifyRoutine %x %p [%p %p]\n", processId, PsGetCurrentProcess(), imageInfo->ImageBase, imageInfo->ImageSize);
 	}
 	else
@@ -170,7 +120,7 @@ void CProcess2Fuzz::ThreadNotifyRoutine(
 	__in BOOLEAN create
 	)
 {
-	FUZZ_THREAD_INFO thread_info(threadId, processId);
+	CThreadEvent thread_info(threadId, processId);
 	if (!!create)
 	{
 		(void)m_threads.Push(thread_info);
@@ -191,7 +141,7 @@ void CProcess2Fuzz::RemoteThreadNotifyRoutine(
 	__in BOOLEAN create 
 	)
 {
-	FUZZ_THREAD_INFO thread_info(threadId, parentProcessId);
+	CThreadEvent thread_info(threadId, parentProcessId);
 	if (!!create)
 	{
 		(void)m_threads.Push(thread_info);
@@ -216,8 +166,8 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 	)
 {
 	DbgPrint("\n@VirtualMemoryCallback %p %p [thread : %p]\n", PsGetThreadProcessId(PsGetCurrentThread()), m_processId, PsGetCurrentThread());
-	FUZZ_THREAD_INFO* fuzz_thread;
-	if (m_threads.Find(FUZZ_THREAD_INFO(), &fuzz_thread))
+	CThreadEvent* fuzz_thread;
+	if (m_threads.Find(CThreadEvent(), &fuzz_thread))
 	{
 		ULONG_PTR* r3stack = get_ring3_rsp();
 		DbgPrint("\n >  I. @Prologue %p %p [%p]\n", r3stack, *r3stack, reg[RCX]);
@@ -231,21 +181,46 @@ bool CProcess2Fuzz::Syscall(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
+	if (!m_epHook.IsHooked())
+	{
+		//KeBreak();
+
+		m_epHook.InstallHook();
+	}
+
+
+//	if (FAST_CALL == (ULONG)reg[RAX])
+	{
+		switch (reg[RAX])
+		{
+		case SYSCALL_INFO_FLAG:
+			DbgPrint("\n > SYSCALL_INFO_FLAG < \n");
+			KeBreak();
+			return true;
+		case SYSCALL_TRACE_FLAG:
+			DbgPrint("\n > SYSCALL_TRACE_FLAG < \n");
+			KeBreak();
+			return true;
+		default:
+			DbgPrint("\n > SYSCALL_UNKNOWN_FLAG < \n");
+			break;
+		}		
+	}
 	//implement ref counting ? auto_ptr...
 	//but assumption, if thread is in syscall then it can not exit for now good enough...
-	FUZZ_THREAD_INFO* fuzz_thread;
-	if (m_threads.Find(FUZZ_THREAD_INFO(), &fuzz_thread))
-	{
+	CThreadEvent* fuzz_thread;
+	if (m_threads.Find(CThreadEvent(), &fuzz_thread))
+	{		
 		if (fuzz_thread->WaitForSyscallEpilogue())
 		{				
-			if (fuzz_thread->MemoryInfo.Write &&
+			if (fuzz_thread->LastMemoryInfo.Write &&
 				//CMemoryRange((BYTE*)fuzz_thread->MemoryInfo.Memory, fuzz_thread->MemoryInfo.Size, 0).IsInRange((BYTE*)0x2340000))
-				!m_stacks.Find(CRange<ULONG_PTR>(reinterpret_cast<ULONG_PTR*>(fuzz_thread->MemoryInfo.Memory))))
+				!m_stacks.Find(CRange<ULONG_PTR>(reinterpret_cast<ULONG_PTR*>(fuzz_thread->LastMemoryInfo.Memory))))
 			{
-				SetUnwriteable(fuzz_thread->MemoryInfo.Memory, fuzz_thread->MemoryInfo.Size);
+				SetUnwriteable(fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size);
 			}
 				
-			DbgPrint("\n > @Epilogue %p %x %s\n", fuzz_thread->MemoryInfo.Memory, fuzz_thread->MemoryInfo.Size, fuzz_thread->MemoryInfo.Write ? "attempt to write" : "easy RE+ attempt");
+			DbgPrint("\n > @Epilogue %p %x %s\n", fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size, fuzz_thread->LastMemoryInfo.Write ? "attempt to write" : "easy RE+ attempt");
 			fuzz_thread->EpilogueProceeded();
 			return true;
 		}
@@ -255,28 +230,59 @@ bool CProcess2Fuzz::Syscall(
 }
 
 __checkReturn
-bool CProcess2Fuzz::PageFault( __inout ULONG_PTR reg[REG_COUNT] )
+bool CProcess2Fuzz::PageFault( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
 {
 	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 
-	//temporary for demo
-	if (0x2340000 == (ULONG_PTR)fault_addr)
-		return false;
-
-	if (0x2340002 == (ULONG_PTR)fault_addr)
-		KeBreak();
-
-	if (m_nonWritePages.Find(CMemoryRange(fault_addr, sizeof(BYTE))))
+	CThreadEvent* fuzz_thread;
+	if (PsGetCurrentProcessId() == m_processId)
 	{
-		m_nonWritePages.Pop(CMemoryRange(fault_addr, sizeof(BYTE)));
-		if (!CMMU::IsWriteable(fault_addr))
+		if (FAST_CALL == readcr2())
 		{
-			CMMU::SetWriteable(fault_addr, sizeof(ULONG_PTR));
-			//+set trap after instruction, to set unwriteable!
+			IRET* iret = PPAGE_FAULT_IRET(reg);
 
-			//sync problem, not locked and acces via ref, via ref counting ...
-			return true;
+			if (FAST_CALL == (ULONG_PTR)iret->Return)
+			{
+				//handle branch tracing - callback from HV
+				DbgPrint("*LOAD_RSP(reg) ->*%p<- %p; %p [%p]", iret, *HOOK_ORIG_RSP(reg), reg, (reg + REG_COUNT));
+				iret->Return = m_extRoutines[ExtTrapTrace];
+				return true;
+			}
+			else if (readcr2() == reg[RAX])
+			{
+				//invoke callback to monitor
+				if (m_threads.Find(CThreadEvent(), &fuzz_thread))
+					return fuzz_thread->EventCallback(reg);
+				KeBreak();
+			}
 		}
+
+		//temporary for demo
+		if (0x2340000 == (ULONG_PTR)fault_addr)
+			return false;
+
+		if (0x2340002 == (ULONG_PTR)fault_addr)
+			KeBreak();
+
+		if (m_nonWritePages.Find(CMemoryRange(fault_addr, sizeof(BYTE))))
+		{
+			m_nonWritePages.Pop(CMemoryRange(fault_addr, sizeof(BYTE)));
+			if (!CMMU::IsWriteable(fault_addr))
+			{
+				CMMU::SetWriteable(fault_addr, sizeof(ULONG_PTR));
+				//+set trap after instruction + clear BTF, to set unwriteable!
+
+				//sync problem, not locked and acces via ref, via ref counting ...
+				return true;
+			}
+		}
+	}
+	else
+	{
+		if (m_threads.Find(CThreadEvent((HANDLE)reg[R9], NULL), &fuzz_thread))
+			return fuzz_thread->EventCallback(reg);
 	}
 	
 	return false;
@@ -304,7 +310,7 @@ void CProcess2Fuzz::SetUnwriteable(
 		 * After initializing mem, it is stored just in VAD
 		 * at first pagefault using this addrres is parsed VAD and created particular PTE!
 		 */
-	  if (!CMMU::IsValid(addr))
+		if (!CMMU::IsValid(addr))
 			vad_scanner.SetUnwriteable(addr, size);
 		else
 			CMMU::SetUnWriteable(addr, size);

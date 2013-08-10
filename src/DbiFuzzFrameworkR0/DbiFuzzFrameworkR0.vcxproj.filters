@@ -24,10 +24,13 @@
     <ClCompile Include="Common\Constants.cpp">
       <Filter>src\Common</Filter>
     </ClCompile>
-    <ClCompile Include="..\Common\utils\ProcessCtx.cpp">
-      <Filter>Common\Kernel</Filter>
-    </ClCompile>
     <ClCompile Include="src\DbiMonitor.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\utils\ProcessCtx.cpp">
+      <Filter>Common\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ThreadEvent.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
@@ -97,12 +100,6 @@
     <ClInclude Include="..\Common\utils\ProcessCtxWorker.hpp">
       <Filter>Common\utils</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\Kernel\ProcessCtx.hpp">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\ProcessCtx.h">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
     <ClInclude Include="src\Process2Fuzz.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -118,9 +115,6 @@
     <ClInclude Include="..\Common\utils\CSYSCALL.hpp">
       <Filter>Common\utils</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\utils\CSyscallCallbacks.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
     <ClInclude Include="..\Common\utils\CSYSCALL.h">
       <Filter>Common\utils</Filter>
     </ClInclude>
@@ -132,6 +126,33 @@
     </ClInclude>
     <ClInclude Include="src\DbiMonitor.h">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\FastCall\FastCall.h">
+      <Filter>Common\FastCall</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\utils\ProcessCtx.h">
+      <Filter>Common\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\Kernel\Process.hpp">
+      <Filter>Common\Kernel</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\utils\PE.hpp">
+      <Filter>Common\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\utils\ColdPatcher.hpp">
+      <Filter>Common\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\utils\DelayLoadEntryPointHook.hpp">
+      <Filter>Common\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ThreadEvent.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\utils\SyscallCallbacks.hpp">
+      <Filter>Common\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\base\Shared.h">
+      <Filter>Common\base</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -165,12 +186,18 @@
     <Filter Include="Common\utils">
       <UniqueIdentifier>{171cef3f-7106-48bd-9b38-0ce5a8e5b176}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Common\FastCall">
+      <UniqueIdentifier>{072ada60-b1c5-49df-b0fd-4fe093c7c601}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="..\Common\amd64\_instrinsics.asm">
       <Filter>Common\amd64</Filter>
     </MASM>
     <MASM Include="src\amd64\_syscall.asm">
+      <Filter>src\amd64</Filter>
+    </MASM>
+    <MASM Include="src\amd64\ext_interface.asm">
       <Filter>src\amd64</Filter>
     </MASM>
   </ItemGroup>

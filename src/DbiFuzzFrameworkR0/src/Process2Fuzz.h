@@ -7,12 +7,15 @@
 #define __FUZZPROCESS_H__
 
 #include "../../Common/base/Common.h"
+#include "Common/Constants.h"
 #include "../../Common/utils/ProcessCtx.h"
 #include "../../Common/utils/LockedContainers.hpp"
-#include "../../Common/utils/CSyscallCallbacks.hpp"
+#include "../../Common/utils/SyscallCallbacks.hpp"
 #include "../../Common/utils/MemoryRange.h"
 
-struct FUZZ_THREAD_INFO;
+#include "../../Common/utils/DelayLoadEntryPointHook.hpp"
+
+#include "ThreadEvent.h"
 
 class CProcess2Fuzz : 
 	public CProcessContext,
@@ -91,7 +94,11 @@ protected:
 		);
 
 protected:
-	CLockedAVL<FUZZ_THREAD_INFO> m_threads;
+	CDelayLoadMzEntryPointHook m_epHook;
+
+	const void* m_extRoutines[ExtCount];
+
+	CLockedAVL<CThreadEvent> m_threads;
 	CLockedAVL<CHILD_PROCESS> m_childs;
 	CLockedAVL<LOADED_IMAGE> m_loadedImgs;
 	CLockedAVL<CMemoryRange> m_nonWritePages;

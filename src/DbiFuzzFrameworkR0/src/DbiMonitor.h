@@ -17,6 +17,12 @@
 
 #include "../Common/Stack.hpp"
 
+struct BRANCH_INFO 
+{
+	const void* DstEip;
+	const void* SrcEip;
+};
+
 class CDbiMonitor : 
 	public CCRonos,
 	public CSingleton<CDbiMonitor>
@@ -37,7 +43,7 @@ public:
 		__in BYTE coreId
 		);
 
-	CStack& GetPrintfStack();
+	CStack<BRANCH_INFO>& GetBranchStack();
 
 	__forceinline
 	__checkReturn
@@ -45,6 +51,8 @@ public:
 		__in HANDLE processId,
 		__inout CProcess2Fuzz** process
 		);
+	
+	CStack<ULONG_PTR> PrintfStack;
 
 /*
 	static
@@ -77,7 +85,7 @@ protected:
 		__in const void* hook
 		);
 
-	CStack m_printfStack;
+	CStack<BRANCH_INFO> m_branchStack;
 	CProcessMonitor<CProcess2Fuzz> m_procMonitor;
 
 protected:

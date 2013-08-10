@@ -22,7 +22,7 @@ bool CProcessContext::ResolveImageName(
 		if (NULL != resolved_name)
 		{
 			name = resolved_name + 1;
-			//DbgPrint("\nProcess launched : %ws", resolved_name);
+			DbgPrint("\nProcess launched (Loadlib) : %ws", resolved_name);
 			len -= (name - fullImagePath);
 			InitUnicodeSubstring(name, len, imageName);
 

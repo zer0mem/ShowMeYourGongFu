@@ -122,6 +122,8 @@ __checkReturn bool CVmx::VmcsInit()
 	SetSegSelector(m_guestState.Fs, VMX_VMCS16_GUEST_FIELD_FS);
 	SetSegSelector(m_guestState.Gs, VMX_VMCS16_GUEST_FIELD_GS);	
 
+	DbgPrint("\n > VMX_VMCS16_GUEST_FIELD_GS : %p\n", m_guestState.Gs);
+
 	SetSegSelector(m_guestState.Ldtr, VMX_VMCS16_GUEST_FIELD_LDTR);
 	SetSegSelector(m_guestState.Tr, VMX_VMCS16_GUEST_FIELD_TR);
 
@@ -303,7 +305,7 @@ void CVmx::GetSegmentDescriptor( __out SEGMENT_SELECTOR* segSel, __in ULONG_PTR 
 
 void CVmx::SetSegSelector( __in ULONG_PTR segSelector, __in ULONG_PTR segField )
 {
-	ULONG_PTR index = (segField - VMX_VMCS16_GUEST_FIELD_ES) / sizeof(WORD) * 2;
+	size_t index = (segField - VMX_VMCS16_GUEST_FIELD_ES);
 
 	SEGMENT_SELECTOR seg_sel;
 	GetSegmentDescriptor(&seg_sel, segSelector);

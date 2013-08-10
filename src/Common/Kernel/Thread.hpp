@@ -9,14 +9,10 @@
 #include "../base/Common.h"
 #include "../base/ComparableId.hpp"
 
-/*
- * dont leak referenced PETHREAD! 
- * unless implemented refcounting, but in most cases
- * it is necessary to work directly with lookuped ethread ?
- */
 class CEthread :
 	public COMPARABLE_ID<PETHREAD>
 {
+public:
 	explicit CEthread(
 		__in HANDLE threadId
 		) : COMPARABLE_ID(NULL)
@@ -29,6 +25,16 @@ class CEthread :
 	{
 		if (Id)
 			ObDereferenceObject(Id);
+	}
+
+	PETHREAD GetEthread()
+	{
+		return Id;
+	}
+
+	PEPROCESS GetEProcess()
+	{
+		return PsGetThreadProcess(Id);
 	}
 };
 

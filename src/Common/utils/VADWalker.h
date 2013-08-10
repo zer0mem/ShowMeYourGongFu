@@ -9,19 +9,18 @@
 #include "../base/Common.h"
 
 #include "../Kernel/IRQL.hpp"
-#include "../Kernel/ProcessCtx.hpp"
 #include "../Kernel/Lock.hpp"
 #include "../Kernel/Apc.h"
 
 #include "../utils/Vad.h"
-#include "../Common/utils/Undoc.h"
+#include "../utils/Undoc.h"
 
-#include "../Common/utils/BinTreeWalker.hpp"
+#include "../utils/BinTreeWalker.hpp"
 
-#include "../Common/Kernel/MMU.h"
-#include "../Common/utils/MemoryRange.h"
+#include "../Kernel/MMU.h"
+#include "../utils/MemoryRange.h"
 
-#include "../Common/Kernel/ProcessCtx.hpp"
+#include "../Kernel/Process.hpp"
 
 //------------------------------------------------------------
 // ****************** VAD_NODE MEMORY RANGE ****************** 

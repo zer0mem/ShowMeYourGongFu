@@ -8,44 +8,47 @@
 
 //missing locks ;) - crappy container, just for quick dbgprints, should to be removed ...
 //but not important to much :P just helper ... 
+template<class TYPE>
 class CStack
 {
 public:
-	CStack() : m_top(0), m_bottom(0), m_alert(false)
+	CStack() : 
+		m_top(0), 
+		m_bottom(0)
 	{
 	}
 
-	__checkReturn bool IsEmpty()
+	__checkReturn
+	bool IsEmpty()
 	{
 		return (m_bottom == m_top);
 	}
 
-	ULONG_PTR Push(__in ULONG_PTR val)
+	bool Push(
+		__in const TYPE& val
+		)
 	{
+		ASSERT(m_bottom <= m_top);
+
 		if (m_bottom <= m_top)
 		{
-			m_alert = false;
 			size_t ind = InterlockedExchangeAdd64((LONG64*)&m_top, 1);
-			m_readMsrAttempts[ind] = val;
+			m_entries[ind] = val;
+			return true;
 		}
-		else if (!m_alert)
-		{
-			m_alert = true;
-			DbgPrint("\n ... stack is full ...\n");
-		}
-		return val;
+		return false;
 	}
 
-	ULONG_PTR Pop()
+	TYPE Pop()
 	{
 		size_t ind = InterlockedExchangeAdd64((LONG64*)&m_bottom, 1);
-		return m_readMsrAttempts[ind];
+		return m_entries[ind];
 	}
+
 protected:
-	bool m_alert;
 	size_t m_top;
 	size_t m_bottom;
-	ULONG_PTR m_readMsrAttempts[0x100];
+	TYPE m_entries[0x100];
 };
 
 #endif //__STACK_H__

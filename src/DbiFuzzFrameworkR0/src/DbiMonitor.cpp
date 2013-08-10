@@ -12,6 +12,7 @@
 
 #include "../../Common/utils/Undoc.hpp"
 #include "Common/Constants.h"
+#include "../../Common/FastCall/FastCall.h"
 
 EXTERN_C void sysenter();
 EXTERN_C void rdmsr_hook();
@@ -175,13 +176,13 @@ bool CDbiMonitor::GetProcess(
 	__inout CProcess2Fuzz** process
 	)
 {
-	return m_procMonitor.GetProcessWorker().GetProcess(processId, process);
+	return m_procMonitor.GetProcessWorker().GetProcessUnsafe(processId, process);
 }
 
 //dbgprint helper
-CStack& CDbiMonitor::GetPrintfStack()
+CStack<BRANCH_INFO>& CDbiMonitor::GetBranchStack()
 {
-	return m_printfStack;
+	return m_branchStack;
 }
 
 
@@ -195,8 +196,11 @@ EXTERN_C void* SysCallCallback(
 	__inout ULONG_PTR reg [REG_COUNT]
 	)
 {
-	if (0x143 == reg[RAX])
-		DbgPrint("\nZwRaiseException %p", readcr2());
+	for (int i = 0; !CDbiMonitor::GetInstance().PrintfStack.IsEmpty() && i < 0x10; i++)
+	{
+		ULONG_PTR info = CDbiMonitor::GetInstance().PrintfStack.Pop();
+		DbgPrint("\n >>PrintfStack : %p\n", info);
+	}
 
 	CProcess2Fuzz* fuzzed_proc;
 	if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
@@ -204,14 +208,6 @@ EXTERN_C void* SysCallCallback(
 		if (fuzzed_proc->Syscall(reg))
 			return NULL;
 	}
-
-	//print out BTF status, temporary use syscall hook instead of timer :P
-	if (!CDbiMonitor::GetInstance().GetPrintfStack().IsEmpty())
-	{
-		ULONG_PTR addr = CDbiMonitor::GetInstance().GetPrintfStack().Pop();		
-		DbgPrint("\nprintfstack : %p\n", addr);
-	}
-
 
 	ULONG core_id = KeGetCurrentProcessorNumber();
 	if (core_id > MAX_PROCID)
@@ -225,20 +221,43 @@ EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	ULONG_PTR* stack = LOAD_RSP(reg);
+#define USER_MODE_CS 0x1
+	IRET* iret = PPAGE_FAULT_IRET(reg);
+
+
+	if (FAST_CALL != (ULONG_PTR)iret->Return && FAST_CALL == readcr2())
+	{
+		KeBreak();
+	}
 
 	//in kernelmode can cause another PF and skip recursion handling :P
 
 	//previous mode == usermode ?
-#define USER_CS 0x1
-	ULONG_PTR previous_mode = *(stack + 2);//test byte ptr [rbp+0F0h], 1
-	if (previous_mode & USER_CS)
+	if ((iret->Flags & USER_MODE_CS) || 
+		(FAST_CALL == (ULONG_PTR)iret->Return && FAST_CALL == readcr2()) ||
+		(FAST_CALL == reg[RAX] && FAST_CALL == readcr2()) 
+		)//btf HV callback
 	{
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 		{
 			if (fuzzed_proc->PageFault(reg))
 				return NULL;
+		}
+		else
+		{
+			if (FAST_CALL == reg[RAX])
+			{
+				KeBreak();
+				if ((ULONG_PTR)PsGetCurrentProcessId() != reg[RSI])
+				{
+					if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[RSI], &fuzzed_proc))
+					{
+						if (fuzzed_proc->PageFault(reg))
+							return NULL;
+					}
+				}
+			}
 		}
 	}
 
@@ -264,9 +283,6 @@ void CDbiMonitor::TrapHandler(
 
 			if (0xBADF00D0 == (ULONG)reg[RBX] || 0xBADF00D1 == (ULONG)reg[RBX])
 			{
-				//start quick logging
-				CDbiMonitor::GetInstance().GetPrintfStack().Push(ins_addr);
-
 				//print some info src-dst
 				ULONG_PTR src = 0;
 				for (BYTE i = 0; i < 4; i++)
@@ -274,12 +290,28 @@ void CDbiMonitor::TrapHandler(
 					if (rdmsr(MSR_LASTBRANCH_0_TO_IP + i) == ins_addr)
 					{
 						src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
-						CDbiMonitor::GetInstance().GetPrintfStack().Push(i);
-						CDbiMonitor::GetInstance().GetPrintfStack().Push(src);
+
 						break;
 					}
 				}
 
+
+				BRANCH_INFO branch_i;
+				branch_i.DstEip = reinterpret_cast<const void*>(ins_addr);
+				branch_i.SrcEip = reinterpret_cast<const void*>(src);
+				CDbiMonitor::GetInstance().GetBranchStack().Push(branch_i);
+
+				CDbiMonitor::GetInstance().PrintfStack.Push(0xBADF00D0);
+				CDbiMonitor::GetInstance().PrintfStack.Push(src);
+				CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
+
+				//set-up next BTF hook
+				ULONG_PTR rflags = 0;
+				if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
+					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
+
+				vmwrite(VMX_VMCS64_GUEST_RIP, FAST_CALL);
+/*
 				//BTF - trace marker
 				CDbiMonitor::GetInstance().GetPrintfStack().Push(0xBADF00D0);
 
@@ -306,6 +338,7 @@ void CDbiMonitor::TrapHandler(
 				}
 
 				vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
+*/
 			}
 		}
 	}
@@ -383,7 +416,8 @@ void CDbiMonitor::CPUIDCALLBACK(
 		if (0xBADF00D0 == (ULONG)reg[RAX])
 		{
 			reg[RBX] = 0xBADF00D0;
-			CDbiMonitor::GetInstance().GetPrintfStack().Push(0x12345678);
+
+			CDbiMonitor::GetInstance().PrintfStack.Push(0xDEADCAFE);
 
 			ULONG_PTR rflags = 0;
 			vmread(VMX_VMCS_GUEST_RFLAGS, &rflags);

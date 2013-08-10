@@ -10,13 +10,24 @@
 #include "PE.hpp"
 #include "ColdPatcher.hpp"
 
-class CDelayLoadMzEntryPointHook
+class CDelayLoadMzEntryPointHook :
+	public COMPARABLE_ID<void*>
 {
 public:
 	CDelayLoadMzEntryPointHook() : 
+		COMPARABLE_ID(NULL),
 		m_addrToHook(NULL),
 		m_addrOfHook(NULL),
 		m_relHook(NULL)
+	{
+	}
+
+	CDelayLoadMzEntryPointHook(
+		__in void* addrToHook 
+		) : COMPARABLE_ID(addrToHook),
+			m_addrToHook(addrToHook),
+			m_addrOfHook(NULL),
+			m_relHook(NULL)
 	{
 	}
 

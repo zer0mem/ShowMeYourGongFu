@@ -61,6 +61,9 @@ public:
 
 	~CAVL()
 	{
+		const AVL_NODE<TYPE>* element;
+		while (GetLowerBound(GetRoot(), &element))
+			Remove(&element->Value);
 	}
 
 	__forceinline
@@ -84,7 +87,14 @@ public:
 		__in const TYPE* val
 		)
 	{
-		return !!RtlDeleteElementGenericTableAvl(&m_avl, (TYPE*)val);
+		TYPE* obj;
+		if (Find(val, &obj))
+		{
+			obj->~TYPE();
+		
+			return !!RtlDeleteElementGenericTableAvl(&m_avl, (TYPE*)val);
+		}
+		return false;
 	}
 
 	__forceinline
@@ -96,7 +106,7 @@ public:
 	{
 		if (!GetSize())
 		{
-			*val = (TYPE*)GetRoot();
+			*val = NULL;
 			return false;
 		}
 

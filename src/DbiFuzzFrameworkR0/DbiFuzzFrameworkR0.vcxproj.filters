@@ -33,6 +33,9 @@
     <ClCompile Include="src\ThreadEvent.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\ImageInfo.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="drv_common.h" />
@@ -153,6 +156,9 @@
     </ClInclude>
     <ClInclude Include="..\Common\base\Shared.h">
       <Filter>Common\base</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ImageInfo.h">
+      <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

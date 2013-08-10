@@ -88,8 +88,7 @@ public:
 		return STATUS_SUCCESS;
 	}
 
-protected:
-	static
+	static 
 	__checkReturn
 	bool ResolveImageName( 
 		__in_ecount(len) const WCHAR* fullImagePath, 
@@ -144,6 +143,10 @@ struct CHILD_PROCESS :
 	HANDLE ProcessId;
 	HANDLE ThreadId;
 
+	CHILD_PROCESS() : COMPARABLE_ID(NULL)
+	{
+	}
+
 	CHILD_PROCESS(
 		__in PEPROCESS eprocess,
 		__in HANDLE processId = NULL
@@ -162,18 +165,13 @@ struct CHILD_PROCESS :
 struct LOADED_IMAGE : 
 	public COMPARABLE_ID< CRange<void> >
 {
-	bool Is64;
-	ULONG EntryPoint;
-	WCHAR* ImgName;
-
 	LOADED_IMAGE() : COMPARABLE_ID(NULL)
 	{
 	}
 
 	LOADED_IMAGE(
 		__in const void* addr
-		) : COMPARABLE_ID(addr), 
-			Is64(false)
+		) : COMPARABLE_ID(addr)
 	{
 	}
 
@@ -182,10 +180,6 @@ struct LOADED_IMAGE :
 		) : COMPARABLE_ID(CRange<void>(imgInfo->ImageBase))
 	{
 		Id.SetSize(imgInfo->ImageSize);
-
-		CPE pe(imgInfo->ImageBase);
-		Is64 = pe.Is64Img();
-		EntryPoint = pe.Entrypoint();
 	}
 
 	void* ImageBase()

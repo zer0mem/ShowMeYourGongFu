@@ -9,11 +9,13 @@
 #include "../../Common/base/Common.h"
 #include "../../Common/utils/ProcessCtx.h"
 #include "../../Common/utils/SyscallCallbacks.hpp"
+#include "../../Common/utils/LockedContainers.hpp"
+#include "../../Common/Kernel/MemoryMapping.h"
 
-#include "Common/Constants.h"
 #include "../../Common/FastCall/FastCall.h"
 
-#include "../../Common/utils/LockedContainers.hpp"
+#include "Common/Constants.h"
+#include "ImageInfo.h"
 
 struct EVENT_THREAD_INFO 
 {
@@ -27,25 +29,36 @@ struct EVENT_THREAD_INFO
 	{
 	}
 
-	void SetContext(
+	__checkReturn
+	bool SetContext(
+		__in bool is64,
 		__in ULONG_PTR reg[REG_COUNT],
-		__in CRegXType& regxtype,
 		__in BRANCH_INFO* branchInfo = NULL,
 		__in MEMORY_ACCESS* memInfo = NULL
 		)
 	{
-		for (size_t i = 0; i < REG_COUNT; i++)
-			DbiOutContext.GeneralPurposeContext[i] = (ULONG_PTR)regxtype.GetReg(i);
+		size_t ctx_size = (is64 ? sizeof(ULONG_PTR) * (REG_X64_COUNT + 1) : sizeof(ULONG) * (REG_X86_COUNT + 1));
+		CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_INFO_OUT]), ctx_size);
+		void* r_context = r_auto_context.Map();
+		if (r_context)
+		{
+			CRegXType regsx(is64, r_context);
 
-		DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = (ULONG_PTR)regxtype.GetFLAGS();
+			for (size_t i = 0; i < REG_COUNT; i++)
+				DbiOutContext.GeneralPurposeContext[i] = (ULONG_PTR)regsx.GetReg(i);
 
-		if (branchInfo)
-			DbiOutContext.BranchInfo = *branchInfo;
+			DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = (ULONG_PTR)regsx.GetFLAGS();
 
-		if (memInfo)
-			DbiOutContext.MemoryInfo = *memInfo;
+			if (branchInfo)
+				DbiOutContext.LastBranchInfo = *branchInfo;
 
-		EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
+			if (memInfo)
+				DbiOutContext.MemoryInfo = *memInfo;
+
+			EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
+			return true;
+		}
+		return false;
 	}
 };
 
@@ -86,9 +99,9 @@ public:
 
 	__checkReturn
 	bool EventCallback(
-		__in LOADED_IMAGE* img, 
+		__in CImage* img, 
 		__in ULONG_PTR reg[REG_COUNT],
-		__in CLockedAVL<LOADED_IMAGE>& imgs
+		__in CLockedAVL<CIMAGEINFO_ID>& imgs
 	);
 
 protected:

@@ -46,9 +46,8 @@ struct COMPARABLE_ID_PTR :
 {
 	TYPE* Value;
 
-	COMPARABLE_ID_PTR() : COMPARABLE_ID((ID)(~0x0))
+	COMPARABLE_ID_PTR() : COMPARABLE_ID(NULL)
 	{
-		Id = (ID)(~0x0);
 		Value = NULL;
 	}
 

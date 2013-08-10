@@ -16,6 +16,7 @@
 #include "../../Common/utils/DelayLoadEntryPointHook.hpp"
 
 #include "ThreadEvent.h"
+#include "ImageInfo.h"
 
 class CProcess2Fuzz : 
 	public CProcessContext,
@@ -74,9 +75,10 @@ public:
 		);
 
 	__checkReturn
-	bool PageFault(
-		__inout ULONG_PTR reg[REG_COUNT]
-		);
+	bool PageFault( 
+		__in BYTE* faultAddr, 
+		__inout ULONG_PTR reg[REG_COUNT] 
+	);
 
 protected:
 	__checkReturn
@@ -93,14 +95,22 @@ protected:
 		__in size_t size
 		);
 
+	__checkReturn
+	bool R3CommPipe( 
+		__in BYTE* faultAddr, 
+		__inout ULONG_PTR reg[REG_COUNT] 
+		);
+
 protected:
-	CDelayLoadMzEntryPointHook m_epHook;
+	bool m_internalError;
+	CImage* m_mainImg;
+	bool m_installed;
 
 	const void* m_extRoutines[ExtCount];
 
-	CLockedAVL< CThreadEvent > m_threads;
+	CLockedAVL<CThreadEvent> m_threads;
 	CLockedAVL<CHILD_PROCESS> m_childs;
-	CLockedAVL<LOADED_IMAGE> m_loadedImgs;
+	CLockedAVL<CIMAGEINFO_ID> m_loadedImgs;
 	CLockedAVL<CMemoryRange> m_nonWritePages;
 	CLockedAVL< CRange<ULONG_PTR> > m_stacks;
 };

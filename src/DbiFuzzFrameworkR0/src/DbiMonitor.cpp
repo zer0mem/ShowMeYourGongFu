@@ -215,12 +215,10 @@ EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
+	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 #define USER_MODE_CS 0x1
 	IRET* iret = PPAGE_FAULT_IRET(reg);
-	/*
-	if (FAST_CALL == readcr2())
-		DbgPrint("\n >>> @PageFault %p %p [& %p] --> %s\n", reg[DBI_IOCALL], reg[DBI_ACTION], iret->Return, (iret->CodeSegment & USER_MODE_CS) ? "usermode cs" : "kernelmode cs");
-		*/
+
 	for (int i = 0; !CDbiMonitor::GetInstance().PrintfStack.IsEmpty() && i < 0x10; i++)
 	{
 		ULONG_PTR info = CDbiMonitor::GetInstance().PrintfStack.Pop();
@@ -235,7 +233,7 @@ EXTERN_C void* PageFault(
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 		{
-			if (fuzzed_proc->PageFault(reg))
+			if (fuzzed_proc->PageFault(fault_addr, reg))
 				return NULL;
 		}
 		else
@@ -246,12 +244,13 @@ EXTERN_C void* PageFault(
 				if ((ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
 				{
 					fuzzed_proc = NULL;
-					(void)(CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc));
+					(void)CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc);
 					if (fuzzed_proc)
 					{
-						if (fuzzed_proc->PageFault(reg))
+						if (fuzzed_proc->PageFault(fault_addr, reg))
 							return NULL;
 					}
+					return NULL;//enum procid - threadid; but nothing monitored yet ...
 				}
 			}
 		}
@@ -277,9 +276,8 @@ void CDbiMonitor::TrapHandler(
 		{
 			ins_addr -= ins_len;
 
-			//print some info src-dst
 			ULONG_PTR src = 0;
-			for (size_t i = rdmsr(MSR_LASTBRANCH_TOS); i >= 0; i--)
+			for (BYTE i = (BYTE)rdmsr(MSR_LASTBRANCH_TOS); i >= 0; i--)
 			{
 				if (rdmsr(MSR_LASTBRANCH_0_TO_IP + i) == ins_addr)
 				{
@@ -303,95 +301,23 @@ void CDbiMonitor::TrapHandler(
 						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
 						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
 
-						ULONG_PTR info = 1;
-						vmread(VMX_VMCS32_RO_EXIT_INSTR_INFO, &info);
 						BRANCH_INFO branch_i;
 						branch_i.DstEip = reinterpret_cast<const void*>(ins_addr);
 						branch_i.SrcEip = reinterpret_cast<const void*>(src);
-						branch_i.Trap = rflags;
-						branch_i.Info = info;
+						branch_i.Flags = rflags;
 						CDbiMonitor::GetInstance().GetBranchStack().Push(branch_i);
 						ins_addr = FAST_CALL;
 
 						//disable trap flag and let handle it by PageFault Hndlr
 						vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 					}
-					else if (src)
-					{
-						CDbiMonitor::GetInstance().PrintfStack.Push(0xBADF00D0);
-						CDbiMonitor::GetInstance().PrintfStack.Push(src);
-						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
-						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
-
-						ULONG_PTR dbg_ctl = (rdmsr(IA32_DEBUGCTL) & (~BTF));
-						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, dbg_ctl & SEG_D_LIMIT);
-						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_HIGH, dbg_ctl >> 32);
-					}
-					else
-					{
-						CDbiMonitor::GetInstance().PrintfStack.Push(0x12345678);
-						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr + ins_len);
-						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
-						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
-
-						ULONG_PTR dbg_ctl = (rdmsr(IA32_DEBUGCTL) | BTF | LBR);
-						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, dbg_ctl & SEG_D_LIMIT);
-						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_HIGH, dbg_ctl >> 32);
-					}
 				}
-				else
-				{
-					CDbiMonitor::GetInstance().PrintfStack.Push(0xDEADCAFE);
-					CDbiMonitor::GetInstance().PrintfStack.Push(src);
-					CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-					CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
-					CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
-				}
-			}
-			else
-			{
-				CDbiMonitor::GetInstance().PrintfStack.Push(0x66666666);
-				CDbiMonitor::GetInstance().PrintfStack.Push(0x66666666);
-				CDbiMonitor::GetInstance().PrintfStack.Push(0x66666666);
-				CDbiMonitor::GetInstance().PrintfStack.Push(0x66666666);
 			}
 
 			vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
-			/*
-
-			//HYPERVISOR DONT CLEAN IA32_DEBUGCTL ==> BTF FLAG!!!
-
-			//if more processors, it would be probably necessary to handle also TRAP_FLAG, casue switch to another CPU
-			//with unset BTF invoke just single-step
-			if (!src)
-			{
-			//turn off TRAP_page_fault
-			ULONG_PTR intercepts;
-			vmread(VMX_VMCS_CTRL_EXCEPTION_BITMAP, &intercepts);
-			intercepts &= (~BTS(TRAP_page_fault));
-			vmwrite(VMX_VMCS_CTRL_EXCEPTION_BITMAP, intercepts);
-			}
-			*/
 		}
-		else
-		{
-			CDbiMonitor::GetInstance().PrintfStack.Push(0x55555555);
-			CDbiMonitor::GetInstance().PrintfStack.Push(0x55555555);
-			CDbiMonitor::GetInstance().PrintfStack.Push(0x55555555);
-			CDbiMonitor::GetInstance().PrintfStack.Push(0x55555555);
-		}
-	}
-	else
-	{
-		CDbiMonitor::GetInstance().PrintfStack.Push(0x77777777);
-		CDbiMonitor::GetInstance().PrintfStack.Push(0x77777777);
-		CDbiMonitor::GetInstance().PrintfStack.Push(0x77777777);
-		CDbiMonitor::GetInstance().PrintfStack.Push(0x77777777);
 	}
 }
-
 
 //-----------------------------------------------------------
 // ****************** PATCHGUARD CALLBACKS ******************

@@ -18,8 +18,12 @@ CProcess2Fuzz::CProcess2Fuzz(
 	__inout PEPROCESS process, 
 	__in HANDLE processId, 
 	__inout_opt PS_CREATE_NOTIFY_INFO* createInfo 
-	) : CProcessContext(process, processId, createInfo)
+	) : CProcessContext(process, processId, createInfo),
+		m_mainImg(NULL),
+		m_internalError(false),
+		m_installed(false)
 {
+	RtlZeroMemory(m_extRoutines, sizeof(m_extRoutines));
 }
 
 CProcess2Fuzz::~CProcess2Fuzz()
@@ -36,7 +40,8 @@ bool CProcess2Fuzz::WatchProcess(
 	UNICODE_STRING image_name;
 	if (createInfo->ImageFileName)
 	{
-		if (ResolveImageName(createInfo->ImageFileName->Buffer, 
+		if (ResolveImageName(
+				createInfo->ImageFileName->Buffer, 
 				createInfo->ImageFileName->Length / sizeof(createInfo->ImageFileName->Buffer[0]), 
 				&image_name))
 		{
@@ -76,26 +81,22 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 	__in IMAGE_INFO* imageInfo
 	)
 {
+	if (m_internalError)
+		return;
+
 	if (!imageInfo->SystemModeImage)
 	{
-		if (!m_epHook.IsInitialized())
-			m_epHook.InitBase(imageInfo->ImageBase);
-
-
-		UNICODE_STRING image_name;
-
-		LOADED_IMAGE img(imageInfo);
-		if (ResolveImageName(fullImageName->Buffer, 
-			fullImageName->Length / sizeof(fullImageName->Buffer[0]), 
-			&image_name))
+		CRange<void> img_r(imageInfo->ImageBase);
+		img_r.SetSize(imageInfo->ImageSize);
+		CIMAGEINFO_ID img_id(img_r, new CImage(fullImageName, imageInfo));
+		if (m_loadedImgs.Push(img_id))
 		{
-			img.ImgName = new WCHAR[(image_name.Length + 2) >> 1];
-			memcpy(img.ImgName, image_name.Buffer, image_name.Length);
-			img.ImgName[image_name.Length >> 1] = 0;
+			CImage* img = img_id.Value;
+			img_id.Value = NULL;
+			if (!m_mainImg)
+				m_mainImg = img;
 
-			(void)m_loadedImgs.Push(img);
-
-			if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(image_name)))
+			if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img->ImageName())))
 			{
 				KeBreak();
 				CPE pe(imageInfo->ImageBase);
@@ -106,10 +107,14 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 				{
 					m_extRoutines[i] = pe.GetProcAddress(func_name);
 				}
-				//setup last function as hook
-				m_epHook.SetUpHook(m_extRoutines[ExtMain]);
-			}
+			}		
 		}
+		else
+		{
+			if (!m_mainImg)
+				m_internalError = true;
+		}
+
 		DbgPrint("\n @ImageNotifyRoutine %x %p [%p %p]\n", processId, PsGetCurrentProcess(), imageInfo->ImageBase, imageInfo->ImageSize);
 	}
 	else
@@ -185,27 +190,6 @@ bool CProcess2Fuzz::Syscall(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	if (!m_epHook.IsHooked())
-		m_epHook.InstallHook();
-
-
-	if (FAST_CALL == reg[DBI_IOCALL])
-	{
-		switch (reg[DBI_ACTION])//reg[RAX]
-		{
-		case SYSCALL_INFO_FLAG:
-			DbgPrint("\n > SYSCALL_INFO_FLAG < \n");
-			KeBreak();
-			return true;
-		case SYSCALL_TRACE_FLAG:
-			DbgPrint("\n > SYSCALL_TRACE_FLAG < \n");
-			KeBreak();
-			return true;
-		default:
-			DbgPrint("\n > SYSCALL_UNKNOWN_FLAG < \n");
-			break;
-		}		
-	}
 	//implement ref counting ? auto_ptr...
 	//but assumption, if thread is in syscall then it can not exit for now good enough...
 	CThreadEvent* fuzz_thread;
@@ -226,102 +210,6 @@ bool CProcess2Fuzz::Syscall(
 	}
 
 	return CSYSCALL::Syscall(reg);
-}
-
-__checkReturn
-bool CProcess2Fuzz::PageFault( 
-	__inout ULONG_PTR reg[REG_COUNT] 
-	)
-{
-	IRET* iret = PPAGE_FAULT_IRET(reg);
-	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
-
-	if (readcr2() == FAST_CALL)
-	{
-		if (FAST_CALL == (ULONG_PTR)iret->Return)
-		{
-			//handle branch tracing - callback from HV
-			iret->Return = m_extRoutines[ExtTrapTrace];
-			return true;
-		}
-	}
-
-	LOADED_IMAGE* img;
-	if (m_loadedImgs.Find(LOADED_IMAGE(iret->Return), &img))
-	{
-		CThreadEvent* fuzz_thread;
-		if (PsGetCurrentProcessId() == m_processId)
-		{
-			if (FAST_CALL == readcr2())
-			{
-				if (readcr2() == reg[DBI_IOCALL])
-				{
-					//invoke callback to monitor
-					if (m_threads.Find(CThreadEvent(), &fuzz_thread))
-					{
-						if (m_epHook.IsHooked())
-						{
-							LOADED_IMAGE hook(m_epHook.GetAddrToHook());
-
-							m_epHook.UninstallHook();
-
-							if (m_loadedImgs.Find(hook, &img))
-							{
-								return fuzz_thread->EventCallback(img, reg, m_loadedImgs);
-							}
-							else
-							{
-								DbgPrint("\nnot found!!!!");
-								KeBreak();
-							}
-						}
-
-						return fuzz_thread->EventCallback(img, reg, m_loadedImgs);
-					}
-					KeBreak();
-				}
-			}
-		}
-		else
-		{
-			KeBreak();
-			fuzz_thread = NULL;
-			(void)m_threads.Find(CThreadEvent((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], NULL), &fuzz_thread);
-			if (fuzz_thread)
-			{
-				if (m_epHook.IsHooked())
-					m_epHook.UninstallHook();
-				if (fuzz_thread->MonitorFastCall(img, reg))
-				{
-					return true;
-				}
-			}
-		}
-	}
-
-
-	//temporary for demo
-	if (0x2340000 == (ULONG_PTR)fault_addr)
-		return false;
-
-	if (0x2340002 == (ULONG_PTR)fault_addr)
-		KeBreak();
-
-	if (m_nonWritePages.Find(CMemoryRange(fault_addr, sizeof(BYTE))))
-	{
-		KeBreak();
-		m_nonWritePages.Pop(CMemoryRange(fault_addr, sizeof(BYTE)));
-		if (!CMMU::IsWriteable(fault_addr))
-		{
-			CMMU::SetWriteable(fault_addr, sizeof(ULONG_PTR));
-			//+set trap after instruction + clear BTF, to set unwriteable!
-
-			//sync problem, not locked and acces via ref, via ref counting ...
-			return true;
-		}
-	}
-
-	return false;
 }
 
 void CProcess2Fuzz::SetUnwriteable( 
@@ -351,4 +239,117 @@ void CProcess2Fuzz::SetUnwriteable(
 		else
 			CMMU::SetUnWriteable(addr, size);
 	}
+}
+
+__checkReturn
+bool CProcess2Fuzz::PageFault( 
+	__in BYTE* faultAddr, 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->ImageBase() + m_mainImg->EntryPoint());
+	if (m_mainImg && !m_installed && m_extRoutines[ExtMain])
+	{
+		if (m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtMain]))
+		{
+			DbgPrint("\n%s\n", m_mainImg->IsHooked(ep_hook) ? "EVERYTHINK OK" : "MEGA WTF");
+			KeBreak();
+		}
+		m_installed = m_mainImg->IsHooked(ep_hook);
+	}
+	
+	
+	if ((ULONG_PTR)faultAddr == FAST_CALL)
+		return R3CommPipe(faultAddr, reg);
+
+	if (m_nonWritePages.Find(CMemoryRange(faultAddr, sizeof(BYTE))))
+	{
+		KeBreak();
+		m_nonWritePages.Pop(CMemoryRange(faultAddr, sizeof(BYTE)));
+		if (!CMMU::IsWriteable(faultAddr))
+		{
+			CMMU::SetWriteable(faultAddr, sizeof(ULONG_PTR));
+			//+set trap after instruction + clear BTF, to set unwriteable!
+
+			//sync problem, not locked and acces via ref, via ref counting ...
+			return true;
+		}
+	}
+
+	return false;
+}
+
+__checkReturn
+bool CProcess2Fuzz::R3CommPipe( 
+	__in BYTE* faultAddr, 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	DbgPrint("\nR3CommPipe");
+	IRET* iret = PPAGE_FAULT_IRET(reg);
+
+	if (FAST_CALL == (ULONG_PTR)iret->Return)
+	{
+		DbgPrint("\nHV FastIOCall - callback");
+		//handle branch tracing - callback from HV
+		iret->Return = m_extRoutines[ExtTrapTrace];
+		return true;
+	}
+
+	if (FAST_CALL == reg[DBI_IOCALL])
+	{
+		DbgPrint("\n reg[DBI_RETURN] %p ", reg[DBI_RETURN]);
+		CIMAGEINFO_ID* img_id;
+		if (m_loadedImgs.Find(CIMAGEINFO_ID(CRange<void>(reinterpret_cast<void*>(reg[DBI_RETURN]))), &img_id) ||
+			m_loadedImgs.Find(CIMAGEINFO_ID(CRange<void>(iret->Return)), &img_id))
+		{
+			DbgPrint("\n m_loadedImgs.Find ok ");
+			CImage* img = img_id->Value;
+			CThreadEvent* fuzz_thread;
+			if (PsGetCurrentProcessId() == m_processId)
+			{
+				//invoke callback to monitor
+				if (m_threads.Find(CThreadEvent(), &fuzz_thread))
+					return fuzz_thread->EventCallback(img, reg, m_loadedImgs);
+
+				//not suposed to get here
+				KeBreak();
+			}
+			else
+			{
+				KeBreak();
+				if (SYSCALL_ENUM_NEXT == reg[DBI_ACTION])
+				{
+					CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_INFO_OUT]), sizeof(CID_ENUM));
+					CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.Map());
+					if (cid)
+					{
+						fuzz_thread = NULL;
+						(void)m_threads.Find(CThreadEvent((HANDLE)((ULONG_PTR)cid->ThreadId + 1)), &fuzz_thread);
+
+						if (fuzz_thread)
+						{
+							cid->ProcId = m_processId;
+							cid->ThreadId = fuzz_thread->ThreadId();
+							return true;
+						}
+					}
+				}
+				else
+				{
+					fuzz_thread = NULL;
+					(void)m_threads.Find(CThreadEvent((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], NULL), &fuzz_thread);
+					if (fuzz_thread)
+					{
+						KeBreak();
+						return fuzz_thread->MonitorFastCall(img, reg);
+					}
+				}
+			}
+		}
+		else
+		DbgPrint("\n m_loadedImgs.Find fail ");
+	}
+
+	return false;
 }

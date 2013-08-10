@@ -50,7 +50,10 @@ void __stdcall FastCallEvent(
 		pushad
 		mov dword ptr [esp + DBI_IOCALL * 4], FAST_CALL
 
-		mov dword ptr [esp + DBI_FUZZAPP_INFO_OUT * 4], eax
+		mov dword ptr [esp + DBI_INFO_OUT * 4], eax
+
+		mov eax, [ebp + 3 * 4] ; ebp : [pushf] [ret1] [fastCall] [ret2]
+		mov dword ptr [esp + DBI_RETURN * 4], eax
 
 		mov ecx, fastCall
 		mov dword ptr [esp + DBI_ACTION * 4], ecx ;fastCall
@@ -66,7 +69,7 @@ void __stdcall FastCallEvent(
 
 _WaitForFuzzEvent:
 		cmp byte ptr[esp], 0	; thread friendly :P
-		;jz _WaitForFuzzEvent
+		jz _WaitForFuzzEvent
 
 		pop eax
 		popad
@@ -84,7 +87,7 @@ _WaitForFuzzEvent:
 }
 
 __declspec(naked)
-void __fastcall FastCallMonitor(
+void __stdcall FastCallMonitor(
 	__in ULONG_PTR fastCall,
 	__in HANDLE procId,
 	__in HANDLE threadId,
@@ -93,21 +96,22 @@ void __fastcall FastCallMonitor(
 {
 	__asm
 	{
-		push ebp
-		mov ebp, esp
+		pushfd
 		pushad
+
+		lea ebp, [esp + REG_X86_COUNT * 4]; ebp points to flags -> push ebp in classic prologue
 		
 		mov eax, esp
 		push eax				; push semaphore onto stack
 		mov ebx, esp
 
-		pushad
+		;set information for dbi
 		mov dword ptr [esp + DBI_IOCALL * 4], FAST_CALL
 
-		;mov ecx, fastCall
+		mov ecx, fastCall
 		mov dword ptr [esp + DBI_ACTION * 4], ecx ;fastCall
 
-		;mov edx, procdId
+		mov edx, procId
 		mov dword ptr [esp + DBI_FUZZAPP_PROC_ID * 4], edx ;procdId
 
 		mov edx, threadId
@@ -119,18 +123,19 @@ void __fastcall FastCallMonitor(
 		mov dword ptr [esp + DBI_R3TELEPORT * 4], eax
 
 		mov eax, info
-		mov dword ptr [esp + DBI_FUZZAPP_INFO_OUT * 4], eax
+		mov dword ptr [esp + DBI_INFO_OUT * 4], eax
 		popad
 		mov eax, [ebp]
 
+		
 _WaitForFuzzEvent:
-		int 3
-		cmp dword ptr[esp], 0	; thread friendly :P
-		;jz _WaitForFuzzEvent
+		cmp byte ptr[esp], 0	; thread friendly :P
+		jz _WaitForFuzzEvent
 
-		add esp, 4		
+		pop eax
 		popad
-		pop ebp
+		popfd
+
 		ret
 	}
 }
@@ -152,14 +157,23 @@ void ExtInfo()
 DLLEXPORT
 void ExtMain()
 {
-	FastCallEvent(SYSCALL_MAIN);
+	FastCallEvent(SYSCALL_HOOK);
 }
 
 EXTERN_C __declspec(dllexport) 
-ULONG_PTR TrapTrace(
+void TrapTrace(
+	__in HANDLE procId,
+	__in HANDLE threadId,
 	__inout DBI_OUT_CONTEXT* dbiOut
 	)
 {
-	FastCallMonitor(SYSCALL_TRACE_FLAG, (HANDLE)NULL, (HANDLE)NULL, dbiOut);
-	return (ULONG_PTR)(dbiOut->BranchInfo.DstEip);
+	FastCallMonitor(SYSCALL_TRACE_FLAG, procId, threadId, dbiOut);
+}
+
+EXTERN_C __declspec(dllexport) 
+void GetNextFuzzThread(
+	__inout CID_ENUM* cid
+	)
+{
+	FastCallMonitor(SYSCALL_ENUM_NEXT, cid->ProcId, (HANDLE)NULL, cid);
 }

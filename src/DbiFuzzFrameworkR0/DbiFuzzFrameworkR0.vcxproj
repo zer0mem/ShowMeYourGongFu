@@ -279,6 +279,7 @@
     <ClCompile Include="Common\Constants.cpp" />
     <ClCompile Include="src\DbiMonitor.cpp" />
     <ClCompile Include="DriverEntry.cpp" />
+    <ClCompile Include="src\ImageInfo.cpp" />
     <ClCompile Include="src\Process2Fuzz.cpp" />
     <ClCompile Include="src\ThreadEvent.cpp" />
     <ClCompile Include="StdAfx.cpp" />
@@ -322,6 +323,7 @@
     <ClInclude Include="Common\Stack.hpp" />
     <ClInclude Include="drv_common.h" />
     <ClInclude Include="src\DbiMonitor.h" />
+    <ClInclude Include="src\ImageInfo.h" />
     <ClInclude Include="src\Process2Fuzz.h" />
     <ClInclude Include="src\ThreadEvent.h" />
     <ClInclude Include="StdAfx.h" />

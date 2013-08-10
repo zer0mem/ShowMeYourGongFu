@@ -14,29 +14,31 @@ template<size_t size>
 class CColdPatch
 {
 public:
+	CColdPatch() : m_addrToHook(NULL)
+	{
+	}
+
 	CColdPatch(
 		__in void* addrToHook,
 		__in_bcount(size) const BYTE* hook
-		) : m_addrToHook(NULL)
+		)
 	{
-		DbgPrint("\n CColdPatch : %p %p %x\n", addrToHook, hook, size);
 		if (CMMU::IsValid(addrToHook))
 		{
-			m_addrToHook = addrToHook;
 			CMdl patcher(addrToHook, size);
 			void* cold_patch = patcher.Map();
 			if (cold_patch)
 			{
+				DbgPrint("\n CColdPatch : %p %p %x\n", addrToHook, hook, size);
+
 				memcpy(m_hookOrigB, cold_patch, size);
 				memcpy(cold_patch, hook, size);
 
 				m_addrToHook = addrToHook;
-			}
-			else
-			{
-				m_addrToHook = NULL;
+				return;
 			}
 		}
+		m_addrToHook = NULL;
 	}
 
 	~CColdPatch()
@@ -50,6 +52,7 @@ public:
 
 			if (cold_patch)
 			{
+				DbgPrint("\n ~CColdPatch uninstall : %p\n", m_addrToHook);
 				memcpy(cold_patch, m_hookOrigB, size);
 			}
 		}
@@ -59,6 +62,11 @@ public:
 	bool IsHooked()
 	{
 		return !!m_addrToHook;
+	}
+
+	void* AddrToHook()
+	{
+		return m_addrToHook;
 	}
 
 private:
@@ -78,18 +86,7 @@ struct RELCALLHOOK
 		)
 	{
 		Buffer[0] = 0xE8;
-		*reinterpret_cast<ULONG*>(Buffer + 1) = delta;
-		/*
-		Buffer[0] = 0xCC;
-		Buffer[1] = 0xEB;
-		Buffer[2] = 0xFE;
-		Buffer[3] = 0xCC;
-		Buffer[4] = 0x90;
-		
-		Buffer[5] = 0xE8;
-		*reinterpret_cast<ULONG*>(Buffer + 5 + 1) = delta;
-		*/
-		
+		*reinterpret_cast<ULONG*>(Buffer + 1) = delta;		
 	}
 private:
 	RELCALLHOOK();
@@ -104,13 +101,17 @@ public:
 		) : m_relCallHook((ULONG)(ULONG_PTR)((ULONG_PTR)addrOfHook - (ULONG_PTR)addrToHook - SIZE_REL_CALL)),
 			m_coldPatch(addrToHook, m_relCallHook.Buffer)
 	{
-		DbgPrint("\n CRelCallHook : %p %p ; delta [%p]\n", addrToHook, addrOfHook, (ULONG_PTR)((ULONG_PTR)addrOfHook - (ULONG_PTR)addrToHook - SIZE_REL_CALL));
 	}
 
 	__checkReturn
 	bool IsHooked()
 	{
 		return m_coldPatch.IsHooked();
+	}
+
+	void* AddrToHook()
+	{
+		return m_coldPatch.AddrToHook();
 	}
 
 private:

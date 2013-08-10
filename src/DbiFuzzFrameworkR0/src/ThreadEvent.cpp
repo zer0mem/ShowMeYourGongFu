@@ -96,23 +96,76 @@ bool CThreadEvent::MonitorFastCall(
 }
 
 #include "DbiMonitor.h"
+
 __checkReturn
 bool CThreadEvent::EventCallback( 
-	__in LOADED_IMAGE* img,
+	__in CImage* img,
 	__in ULONG_PTR reg[REG_COUNT],
-	__in CLockedAVL<LOADED_IMAGE>& imgs
+	__in CLockedAVL<CIMAGEINFO_ID>& imgs
 	)
 {
-	BRANCH_INFO* branch_info = NULL;
-	MEMORY_ACCESS* mem_info = NULL;
-
 	IRET* iret = PPAGE_FAULT_IRET(reg);
-	//DbgPrint("\n >>> @CallbackEvent!! %p %p [& %p]\n", reg[DBI_IOCALL], reg[DBI_ACTION], iret->Return);
-
-	size_t ctx_size = (img->Is64 ? sizeof(ULONG_PTR) * (REG_X64_COUNT + 1) : sizeof(ULONG) * (REG_X86_COUNT + 1));
+	DbgPrint("\n >>> @CallbackEvent!! %p %p [& %p]\n", reg[DBI_IOCALL], reg[DBI_ACTION], iret->Return);
 
 	switch(reg[DBI_ACTION])
 	{
+	case SYSCALL_HOOK:
+		{
+			void* ret = reinterpret_cast<void*>(reg[DBI_RETURN] - SIZE_REL_CALL);
+			DbgPrint("\n\ncheck hook : %p\n\n", ret);
+			if (img->IsHooked(ret))
+				img->UninstallHook(ret);
+
+			BRANCH_INFO branch;
+			branch.SrcEip = ret;
+			branch.DstEip = ret;
+			if (m_currentThreadInfo.SetContext(img->Is64(), reg, &branch))
+			{
+				iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+
+				DbgPrint("\n 1. EventCallback <SYSCALL_MAIN> : [%ws -> %p] <- %p [%p] %x\n", img->ImageName().Buffer, ret, reg[DBI_R3TELEPORT], reg, m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS]);
+				break;
+			}
+			DbgPrint("\nEROOR\n");
+			KeBreak();
+		}
+		return false;
+
+	case SYSCALL_TRACE_FLAG:
+		{
+			BRANCH_INFO branch = CDbiMonitor::GetInstance().GetBranchStack().Pop();
+			if (!CDbiMonitor::GetInstance().GetBranchStack().IsEmpty())
+				KeBreak();
+
+			if (m_currentThreadInfo.SetContext(img->Is64(), reg, &branch))
+			{
+				m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = branch.Flags;
+				iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+
+				//temporary dbg info
+				CIMAGEINFO_ID* img_id;
+				CImage* dst_img;
+				imgs.Find(CIMAGEINFO_ID(CRange<void>(branch.DstEip)), &img_id);
+				dst_img = img_id->Value;
+				CImage* src_img;
+				imgs.Find(CIMAGEINFO_ID(CRange<void>(branch.SrcEip)), &img_id);
+				src_img = img_id->Value;
+
+
+				DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG : %p)> : >> %p [%ws] %p [%ws] [-> %p] %p | dbg -> %ws\n", 
+					branch.Flags,
+					branch.SrcEip, src_img->ImageName().Buffer, 
+					branch.DstEip, dst_img->ImageName().Buffer, 
+					reg[DBI_R3TELEPORT], reg, img->ImageName().Buffer);
+
+
+				break;
+			}
+			DbgPrint("\nEROOR\n");
+			KeBreak();
+		}
+		return false;
+
 	case SYSCALL_TRACE_RET:
 		{
 			reg[DBI_IOCALL] = m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_IOCALL];
@@ -122,7 +175,7 @@ bool CThreadEvent::EventCallback(
 			reg[RCX] = m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[RCX];
 			reg[RDX] = m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[RDX];
 
-			iret->Return = m_currentThreadInfo.DbiOutContext.BranchInfo.DstEip;
+			iret->Return = m_currentThreadInfo.DbiOutContext.LastBranchInfo.DstEip;
 			iret->Flags = (m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS] | TRAP);
 
 			DbgPrint("\n > !SYSCALL_TRACE_RET : %p %p %p %p %p [%x]\n", 
@@ -132,98 +185,16 @@ bool CThreadEvent::EventCallback(
 				reg[DBI_ACTION],
 				reg[RCX],
 				reg[RAX]);
-
-			//if fastcall implemented by page fault handler!!
-			return true;
-		}
-		break;
-	case SYSCALL_TRACE_FLAG:
-		if (!CDbiMonitor::GetInstance().GetBranchStack().IsEmpty())
-		{
-			CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_FUZZAPP_INFO_OUT]), ctx_size);
-			void* r_context = r_auto_context.Map();
-			if (r_context)
-			{
-				CRegXType regsx(img->Is64, r_context);
-
-				BRANCH_INFO branch_i = CDbiMonitor::GetInstance().GetBranchStack().Pop();
-				branch_info = &branch_i;
-
-				if (!CDbiMonitor::GetInstance().GetBranchStack().IsEmpty())
-					KeBreak();
-
-				//TODO : disable trap flag in host when EIP is patched not here!!!!					
-				/*
-				* swap return & flags for RETF in ring3 [original order is knowingly bad]
-				* set RETF to the DstEip
-				*/
-				/*
-				ULONG_PTR flags = regsx.GetFLAGS();
-				regsx.SetFLAGS(flags | TRAP);
-				regsx.SetRET((ULONG_PTR)branch_i.DstEip);
-				*/
-				LOADED_IMAGE* dst_img;
-				imgs.Find(LOADED_IMAGE(branch_i.DstEip), &dst_img);
-				LOADED_IMAGE* src_img;
-				imgs.Find(LOADED_IMAGE(branch_i.SrcEip), &src_img);
-
-				//regsx.SetFLAGS(branch_i.Trap);
-
-				iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-				m_currentThreadInfo.SetContext(reg, regsx, branch_info, mem_info);
-
-				DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG : [%p] %p %p %p (%p)> : \n >> %p [%ws] %p [%ws] [-> %p] %p %ws\n", 
-					branch_i.Info, branch_i.Trap, regsx.GetFLAGS(), m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS], regsx.GetRSP(),
-					branch_i.SrcEip, src_img->ImgName, 
-					branch_i.DstEip, dst_img->ImgName, 
-					reg[DBI_R3TELEPORT], reg, img->ImgName);
-
-				if (0xCCCC == (0xFFFF & m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS]))
-				{
-					for (size_t i = 0; i < REG_COUNT + 1; i++)
-					{
-						DbgPrint("\n->%p %x %x\n", reg[i], regsx.GetReg(i), m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[i]);
-					}
-				}
-				//if fastcall implemented by page fault handler!!
-				return true;
-			}
 			break;
 		}
-		//return false//default handle it ...
-	default:
-		return false;
 	case SYSCALL_PATCH_MEMORY:
-		break;
-	case SYSCALL_MAIN:
-		{
-			CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_FUZZAPP_INFO_OUT]), ctx_size);
-			void* r_context = r_auto_context.Map();
-			if (r_context)
-			{
-				CRegXType regsx(img->Is64, r_context);
-				DbgPrint("\n 1. EventCallback <SYSCALL_MAIN> : [-> %p] %p [%p]\n", reg[DBI_R3TELEPORT], reg, regsx.GetFLAGS());
-
-				BRANCH_INFO branch_i;
-				branch_i.SrcEip = reinterpret_cast<void*>((ULONG_PTR)img->ImageBase() + img->EntryPoint);//reinterpret_cast<void*>(regsx.GetRET() - SIZE_REL_CALL);
-				branch_i.DstEip = branch_i.SrcEip;
-				branch_info = &branch_i;
-
-				regsx.SetRDI(0);
-
-				iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-				m_currentThreadInfo.SetContext(reg, regsx, branch_info, mem_info);
-
-				DbgPrint("\n 2. EventCallback <SYSCALL_MAIN> :[-> %p] %p [%p (%p) vs %p]\n", branch_info->DstEip, reg, regsx.GetFLAGS(), regsx.GetRSP(), m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS]);
-				//if fastcall implemented by page fault handler!!
-				return true;
-			}
-		}
-		break;
+	default:
+		DbgPrint("\n >>> @CallbackEvent!! UNSUPPORTED");
+		return false;
 	}
 
-	//if fastcall implemented by page fault handler!!
-	return false;
+	return true;
+
 	//m_currentThreadInfo.SetContext(reg);
 	return FlipSemaphore(m_monitorThreadInfo);
 }

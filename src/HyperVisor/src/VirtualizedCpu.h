@@ -22,11 +22,21 @@ public:
 		__in_opt const VOID* param = NULL);
 	~CVirtualizedCpu();
 
-	__checkReturn bool VirtualizationON();
-	__checkReturn bool VirtualizationOFF();
+	__checkReturn 
+	bool VirtualizationON();
 
-	__checkReturn static BYTE GetCoreId(__in const ULONG_PTR* stack);
-	__checkReturn static inline ULONG_PTR* GetTopOfStack(__in const ULONG_PTR* stack);
+	__checkReturn
+	bool VirtualizationOFF();
+
+	__checkReturn
+	static BYTE GetCoreId(
+		__in const ULONG_PTR* stack
+		);
+
+	__checkReturn 
+	static inline ULONG_PTR* GetTopOfStack(
+		__in const ULONG_PTR* stack
+		);
 
 protected:
 	BYTE m_cpuCore;

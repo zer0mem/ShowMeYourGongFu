@@ -7,7 +7,11 @@
 
 #include "HyperVisor.h"
 
-CHyperVisor::CHyperVisor(__in BYTE coreId, __in_opt const ULONG_PTR traps[MAX_CALLBACK], __in_opt const VOID* callback) : m_coreId()
+CHyperVisor::CHyperVisor(
+	__in BYTE coreId, 
+	__in_opt const ULONG_PTR traps[MAX_CALLBACK], 
+	__in_opt const VOID* callback
+	) : m_coreId()
 {
 	m_callback = NULL != callback ? callback : (const VOID*)DUMMY;
 
@@ -60,7 +64,10 @@ BYTE CHyperVisor::GetCoredId()
 }
 
 //-- hypervisor core -- //
-ULONG_PTR CHyperVisor::HVEntryPoint( __inout ULONG_PTR reg[REG_COUNT], __in VOID* param )
+ULONG_PTR CHyperVisor::HVEntryPoint( 
+	__inout ULONG_PTR reg[REG_COUNT], 
+	__in VOID* param 
+	)
 {
 	(*(void (*)(ULONG_PTR*, const void*))(m_callback))(reg, param);
 
@@ -88,7 +95,9 @@ ULONG_PTR CHyperVisor::HVEntryPoint( __inout ULONG_PTR reg[REG_COUNT], __in VOID
 	return m_hvCallbacks[ExitReason];
 }
 
-void CHyperVisor::HandleCrxAccess( __inout ULONG_PTR reg[REG_COUNT] )
+void CHyperVisor::HandleCrxAccess( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
 {
 	ULONG_PTR ExitQualification;
 	vmread(VMX_VMCS_RO_EXIT_QUALIFICATION, &ExitQualification);
@@ -101,8 +110,15 @@ void CHyperVisor::HandleCrxAccess( __inout ULONG_PTR reg[REG_COUNT] )
 		ULONG_PTR acess = (ExitQualification & 0x00000030) >> 4;
 		ULONG_PTR r64 = (ExitQualification & 0x00000F00) >> 8;
 
+		
+		r64 = r64 < REG_X86_COUNT ? 
+			((~r64) + REG_X86_COUNT) : 
+			(REG_X86_COUNT + (~(r64 - REG_X86_COUNT)) + REG_X86_COUNT);
+
 		if (1 == acess)
+		{
 			vmread(VMX_VMCS64_GUEST_CR3, &reg[r64]);
+		}
 		else if (0 == acess)
 		{
 			vmwrite(VMX_VMCS64_GUEST_CR3, reg[r64]);

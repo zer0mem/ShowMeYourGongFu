@@ -1,42 +1,45 @@
-pushaq macro
-	push r15
-	mov r15,rsp
-	add r15,sizeof(qword)			;LOAD RSP
-	push r14
-	push r13
-	push r12
-	push r11
-	push r10
-	push r9
+pushaq macro	
 	push r8
-	push rdi
-	push rsi
-	push rbp
-	push r15							;PUSH RSP
-	mov r15,[r15-sizeof(qword)]
-	push rbx
-	push rdx
-	push rcx
+	mov r8, rsp
+	add r8, sizeof(qword) ;LOAD RSP
+
+	push r9
+	push r10
+	push r11
+	push r12
+	push r13
+	push r14
+	push r15
+
 	push rax
+	push rcx
+	push rdx
+	push rbx
+	push r8 ;PUSH RSP
+	mov r8, [r8 - sizeof(qword)]
+	push rbp
+	push rsi
+	push rdi
 endm
 
 popaq macro
-	pop rax
-	pop rcx
-	pop rdx
-	pop rbx
-	add rsp,sizeof(qword)				;SKIP RSP
-	pop rbp
-	pop rsi
 	pop rdi
-	pop r8
-	pop r9
-	pop r10
-	pop r11
-	pop r12
-	pop r13
-	pop r14
+	pop rsi
+	pop rbp
+	add rsp, sizeof(qword) ;SKIP POP RSP
+	pop rbx
+	pop rdx
+	pop rcx
+	pop rax
+
 	pop r15
+	pop r14
+	pop r13
+	pop r12
+	pop r11
+	pop r10
+	pop r9
+	pop r8
 endm
 
 pushsq macro
@@ -106,6 +109,10 @@ pushrip macro
 _rip:
 endm
 
+ENTER_HOOK_PROLOGUE macro
+	push rax ; jmp addr {ret}
+endm
+
 ENTER_HOOK macro hook
 	pushfq
 	pushaq
@@ -115,13 +122,9 @@ ENTER_HOOK macro hook
 	call hook
 	popptr
 
-	xchg [rsp], rax
+	mov [rsp + 07h * sizeof(qword)], rax
 	popaq
 	popfq
-endm
-
-ENTER_HOOK_PROLOGUE macro
-	push rax ; jmp addr {ret}
 endm
 
 ENTER_HOOK_EPILOGUE macro

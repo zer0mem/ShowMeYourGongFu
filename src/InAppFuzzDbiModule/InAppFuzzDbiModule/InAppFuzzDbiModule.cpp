@@ -55,9 +55,10 @@ void __fastcall FastCallEvent(
 _WaitForFuzzEvent:
 		int 3
 		cmp byte ptr[esp], 0	; thread friendly :P
-		jz _WaitForFuzzEvent
+		;jz _WaitForFuzzEvent
 
-		pop eax
+		add esp, 4
+		;mov dword ptr [esp + RAX * 4], eax
 		popad
 
 		retf		; perform far ret, due to pop flags -> further trap flag tracing...
@@ -68,8 +69,8 @@ __declspec(naked)
 void __fastcall FastCallMonitor(
 	__in HANDLE threadId,
 	__in ULONG_PTR fastCall,
-	__inout ULONG_PTR reg[REG_COUNT],
-	__inout ULONG_PTR* ret
+	__inout ULONG_PTR* reg,
+	__inout ULONG_PTR* addr
 	)
 {
 	__asm
@@ -90,12 +91,12 @@ _WaitForFuzzEvent:
 		jz _WaitForFuzzEvent
 
 		pop eax
-		mov dword ptr[ret], eax ; return eip of fuzzed process
+		mov dword ptr[addr], eax ; return eip of fuzzed process
 
 		;copy context
 		mov edi, reg
 		mov esi, esp
-		mov ecx, REG_COUNT
+		mov ecx, REG_X86_COUNT
 		rep movsd
 
 		popad
@@ -128,7 +129,7 @@ void ExtMain()
 
 EXTERN_C __declspec(dllexport) 
 ULONG_PTR TrapTrace(
-	__inout ULONG_PTR reg[REG_COUNT]
+	__inout ULONG_PTR* reg
 	)
 {
 	ULONG_PTR ret;

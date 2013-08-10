@@ -10,45 +10,35 @@
 // ****************** DEFINE PUSHAQ order of regs ******************
 //------------------------------------------------------------------
 
-enum
+enum RegSetx86
 {
-	RAX = 0,
-	RCX,
-	RDX,
-	RBX,
-	RSP,
-	RBP,
+	RDI = 0, 
 	RSI,
-	RDI,
-	R8,
-	R9,
-	R10,
-	R11,
-	R12,
-	R13,
-	R14,
-	R15,
-	RFLAGS,
-	REG_COUNT
+	RBP,
+	RSP,
+	RBX,
+	RDX,
+	RCX,
+	RAX,
+	REG_X86_COUNT
 };
 
-enum
+enum RegSetx64
 {
-	EDI = 0,
-	ESI,
-	EBP,
-	ESP,
-	EBX,
-	EDX,
-	ECX,
-	EAX,
-	EFLAGS,
-	CS_SEGMENT,
-	RETURN,
-	REGx86_COUNT
+	R15 = REG_X86_COUNT,
+	R14,
+	R13,
+	R12,
+	R11,
+	R10,
+	R9,
+	R8,
+	REG_X64_COUNT
 };
 
-enum
+#define REG_COUNT REG_X64_COUNT
+
+enum RegFastCallX64Volatile
 {
 	VOLATILE_REG_RCX = 0,
 	VOLATILE_REG_RDX,

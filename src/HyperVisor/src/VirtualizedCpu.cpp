@@ -42,12 +42,14 @@ CVirtualizedCpu::~CVirtualizedCpu()
 	}
 }
 
-__checkReturn bool CVirtualizedCpu::VirtualizationON()
+__checkReturn 
+bool CVirtualizedCpu::VirtualizationON()
 {
 	return m_vmx.InstallHyperVisor(hv_exit, (VOID*)((ULONG_PTR)m_hvStack + HYPERVISOR_STACK_PAGE - 1));
 }
 
-__checkReturn bool CVirtualizedCpu::VirtualizationOFF()
+__checkReturn 
+bool CVirtualizedCpu::VirtualizationOFF()
 {
 	if (m_vmx.CpuActivated())
 	{
@@ -56,7 +58,10 @@ __checkReturn bool CVirtualizedCpu::VirtualizationOFF()
 	return false;
 }
 
-__checkReturn inline ULONG_PTR* CVirtualizedCpu::GetTopOfStack( __in const ULONG_PTR* stack )
+__checkReturn 
+inline ULONG_PTR* CVirtualizedCpu::GetTopOfStack( 
+	__in const ULONG_PTR* stack
+	)
 {
 	while (kStackMark != *stack)
 		stack = (const ULONG_PTR*)ALIGN(stack - 1, PAGE_SIZE);
@@ -64,7 +69,10 @@ __checkReturn inline ULONG_PTR* CVirtualizedCpu::GetTopOfStack( __in const ULONG
 	return (ULONG_PTR*)stack;
 }
 
-__checkReturn BYTE CVirtualizedCpu::GetCoreId( __in const ULONG_PTR* stack )
+__checkReturn 
+BYTE CVirtualizedCpu::GetCoreId( 
+	__in const ULONG_PTR* stack 
+	)
 {
 	ULONG_PTR ds;
 	vmread(VMX_VMCS16_GUEST_FIELD_DS, &ds);
@@ -79,7 +87,10 @@ __checkReturn BYTE CVirtualizedCpu::GetCoreId( __in const ULONG_PTR* stack )
 	return cored_id;
 }
 
-EXTERN_C ULONG_PTR HVExitTrampoline( __inout ULONG_PTR reg[REG_COUNT] )
+EXTERN_C 
+ULONG_PTR HVExitTrampoline( 
+	__inout ULONG_PTR reg[REG_COUNT]
+	)
 {
 	ULONG_PTR ds;
 	vmread(VMX_VMCS16_GUEST_FIELD_DS, &ds);

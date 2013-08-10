@@ -11,14 +11,23 @@
 class CHyperVisor
 {
 public:
-	CHyperVisor(__in BYTE coredId, __in_opt const ULONG_PTR traps[MAX_CALLBACK], __in_opt const VOID* callback = NULL);
+	CHyperVisor(
+		__in BYTE coredId,
+		__in_opt const ULONG_PTR traps[MAX_CALLBACK], 
+		__in_opt const VOID* callback = NULL
+		);
 	~CHyperVisor();
 
-	ULONG_PTR HVEntryPoint(__inout ULONG_PTR reg[REG_COUNT], __in VOID* param);
+	ULONG_PTR HVEntryPoint(
+		__inout ULONG_PTR reg[REG_COUNT], 
+		__in VOID* param
+		);
 	BYTE GetCoredId();
 
 protected:
-	void HandleCrxAccess(__inout ULONG_PTR reg[REG_COUNT]);
+	void HandleCrxAccess(
+		__inout ULONG_PTR reg[REG_COUNT]
+	);
 
 protected:
 	BYTE m_coreId;

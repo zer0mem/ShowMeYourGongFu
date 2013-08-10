@@ -98,7 +98,7 @@ protected:
 
 	const void* m_extRoutines[ExtCount];
 
-	CLockedAVL<CThreadEvent> m_threads;
+	CLockedAVL< CThreadEvent > m_threads;
 	CLockedAVL<CHILD_PROCESS> m_childs;
 	CLockedAVL<LOADED_IMAGE> m_loadedImgs;
 	CLockedAVL<CMemoryRange> m_nonWritePages;

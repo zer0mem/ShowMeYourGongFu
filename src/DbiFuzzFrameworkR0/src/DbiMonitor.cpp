@@ -212,7 +212,7 @@ EXTERN_C void* SysCallCallback(
 	ULONG core_id = KeGetCurrentProcessorNumber();
 	if (core_id > MAX_PROCID)
 		core_id = 0;//incorrect ... TODO ...
-
+	
 	return CDbiMonitor::GetInstance().GetSysCall((BYTE)core_id);
 }
 
@@ -223,20 +223,11 @@ EXTERN_C void* PageFault(
 {
 #define USER_MODE_CS 0x1
 	IRET* iret = PPAGE_FAULT_IRET(reg);
-
-
-	if (FAST_CALL != (ULONG_PTR)iret->Return && FAST_CALL == readcr2())
-	{
-		KeBreak();
-	}
-
+	
 	//in kernelmode can cause another PF and skip recursion handling :P
 
 	//previous mode == usermode ?
-	if ((iret->Flags & USER_MODE_CS) || 
-		(FAST_CALL == (ULONG_PTR)iret->Return && FAST_CALL == readcr2()) ||
-		(FAST_CALL == reg[RAX] && FAST_CALL == readcr2()) 
-		)//btf HV callback
+	if (iret->CodeSegment & USER_MODE_CS)//btf HV callback
 	{
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
@@ -304,12 +295,12 @@ void CDbiMonitor::TrapHandler(
 				CDbiMonitor::GetInstance().PrintfStack.Push(0xBADF00D0);
 				CDbiMonitor::GetInstance().PrintfStack.Push(src);
 				CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-
+/*
 				//set-up next BTF hook
 				ULONG_PTR rflags = 0;
 				if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
 					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-
+*/
 				vmwrite(VMX_VMCS64_GUEST_RIP, FAST_CALL);
 /*
 				//BTF - trace marker

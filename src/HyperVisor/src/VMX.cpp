@@ -19,7 +19,11 @@ CVmx::CVmx(
 	m_preparedState = GetGuestState(procId);
 }
 
-__checkReturn bool CVmx::InstallHyperVisor( __in const VOID* hvEntryPoint, __in VOID* hvStack )
+__checkReturn 
+bool CVmx::InstallHyperVisor( 
+	__in const VOID* hvEntryPoint,
+	__in VOID* hvStack 
+	)
 {
 	if (m_preparedState)
 	{
@@ -41,12 +45,14 @@ CVmx::~CVmx()
 	}
 }
 
-__checkReturn bool CVmx::IsVirtualizationEnabled()
+__checkReturn 
+bool CVmx::IsVirtualizationEnabled()
 {
 	return (0 != (rdmsr(IA32_FEATURE_CONTROL_CODE) & FEATURE_CONTROL_VMXON_ENABLED));
 }
 
-__checkReturn bool CVmx::IsVirtualizationLocked()
+__checkReturn 
+bool CVmx::IsVirtualizationLocked()
 {
 	return (0 != (rdmsr(IA32_FEATURE_CONTROL_CODE) & FEATURE_CONTROL_LOCKED));
 }
@@ -56,8 +62,9 @@ void CVmx::EnableVirtualization()
 	DbgPrint("Virtualization is trying to enable via wrmsr setting FEATURE_CONTROL_VMXON_ENABLED");
 	wrmsr(IA32_FEATURE_CONTROL_CODE, rdmsr(IA32_FEATURE_CONTROL_CODE) | FEATURE_CONTROL_VMXON_ENABLED);
 }
-extern void PageFault();
-__checkReturn bool CVmx::VmcsInit()
+
+__checkReturn 
+bool CVmx::VmcsInit()
 {
 	ULONG_PTR guest_rsp;
 	ULONG_PTR guest_rip;
@@ -181,7 +188,10 @@ __checkReturn bool CVmx::VmcsInit()
 	return false;
 }
 
-__checkReturn bool CVmx::GetGuestState( __in KAFFINITY procId )
+__checkReturn 
+bool CVmx::GetGuestState( 
+	__in KAFFINITY procId 
+	)
 {
 	m_guestState.ProcId = procId;
 	KeSetSystemAffinityThread(procId);
@@ -230,7 +240,7 @@ __checkReturn bool CVmx::GetGuestState( __in KAFFINITY procId )
 	return true;
 }
 
-void CVmx::SetCRx( )
+void CVmx::SetCRx()
 {
 	vmwrite(VMX_VMCS_CTRL_CR0_READ_SHADOW, CR0_PG);//PG
 	vmwrite(VMX_VMCS_CTRL_CR4_READ_SHADOW, 0);
@@ -248,7 +258,7 @@ void CVmx::SetCRx( )
 	vmwrite(VMX_VMCS_HOST_CR4, m_guestState.CR4);
 }
 
-void CVmx::SetControls( )
+void CVmx::SetControls()
 {
 	vmwrite(VMX_VMCS_CTRL_PIN_EXEC_CONTROLS, m_guestState.PIN);
 	vmwrite(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, m_guestState.PROC);
@@ -256,7 +266,7 @@ void CVmx::SetControls( )
 	vmwrite(VMX_VMCS_CTRL_ENTRY_CONTROLS, m_guestState.ENTRY);
 }
 
-void CVmx::SetDT( )
+void CVmx::SetDT()
 {
 	vmwrite(VMX_VMCS64_GUEST_IDTR_BASE,m_guestState.Idtr.base);
 	vmwrite(VMX_VMCS32_GUEST_IDTR_LIMIT, m_guestState.Idtr.limit);
@@ -271,7 +281,7 @@ void CVmx::SetDT( )
 	vmwrite(VMX_VMCS_HOST_IDTR_BASE, m_guestState.Idtr.base);
 }
 
-void CVmx::SetSysCall( )
+void CVmx::SetSysCall()
 {
 	vmwrite(VMX_VMCS32_GUEST_SYSENTER_CS,rdmsr(IA32_SYSENTER_CS) & SEG_D_LIMIT);
 	vmwrite(VMX_VMCS64_GUEST_SYSENTER_ESP, m_guestState.SESP);
@@ -283,7 +293,10 @@ void CVmx::SetSysCall( )
 	vmwrite(VMX_VMCS_HOST_SYSENTER_ESP, m_guestState.SESP);
 }
 
-void CVmx::GetSegmentDescriptor( __out SEGMENT_SELECTOR* segSel, __in ULONG_PTR selector )
+void CVmx::GetSegmentDescriptor( 
+	__out SEGMENT_SELECTOR* segSel, 
+	__in ULONG_PTR selector 
+	)
 {
 	RtlZeroMemory(segSel, sizeof(SEGMENT_SELECTOR));	
 	SEGMENT_DESCRIPTOR* seg = (SEGMENT_DESCRIPTOR *)((PUCHAR)m_guestState.Gdtr.base + (selector >> 3) * 8);	
@@ -303,7 +316,10 @@ void CVmx::GetSegmentDescriptor( __out SEGMENT_SELECTOR* segSel, __in ULONG_PTR 
 	segSel->rights = (segSel->selector ? (((PUCHAR) &segSel->attributes)[0] + (((PUCHAR) &segSel->attributes)[1] << 12)) : 0x10000);
 }
 
-void CVmx::SetSegSelector( __in ULONG_PTR segSelector, __in ULONG_PTR segField )
+void CVmx::SetSegSelector( 
+	__in ULONG_PTR segSelector, 
+	__in ULONG_PTR segField 
+	)
 {
 	size_t index = (segField - VMX_VMCS16_GUEST_FIELD_ES);
 

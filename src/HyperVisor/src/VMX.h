@@ -21,20 +21,40 @@ public:
 		);
 	~CVmx();
 
-	__checkReturn bool InstallHyperVisor(__in const VOID* hvEntryPoint, __in VOID* hvStack);
-	__checkReturn bool CpuActivated() const { return m_cpuActivated; };
+	__checkReturn 
+	bool InstallHyperVisor(
+		__in const VOID* hvEntryPoint, 
+		__in VOID* hvStack
+		);
 
-	static __checkReturn bool IsVirtualizationLocked();
-	static __checkReturn bool IsVirtualizationEnabled();
+	__checkReturn 
+	bool CpuActivated() const { return m_cpuActivated; };
+
+	static __checkReturn 
+	bool IsVirtualizationLocked();
+
+	static __checkReturn
+	bool IsVirtualizationEnabled();
+
 	static void EnableVirtualization();
 
 protected:
-	__checkReturn bool VmcsInit();
+	__checkReturn 
+	bool VmcsInit();
 
-	__checkReturn bool GetGuestState(__in KAFFINITY procId);
+	__checkReturn 
+	bool GetGuestState(
+		__in KAFFINITY procId
+		);
 
-	void GetSegmentDescriptor(__out SEGMENT_SELECTOR* segSel, __in ULONG_PTR selector);
-	void SetSegSelector(__in ULONG_PTR segSelector, __in ULONG_PTR segField);
+	void GetSegmentDescriptor(
+		__out SEGMENT_SELECTOR* segSel, 
+		__in ULONG_PTR selector
+		);
+	void SetSegSelector(
+		__in ULONG_PTR segSelector,
+		__in ULONG_PTR segField
+		);
 
 	void SetCRx();
 	void SetControls();

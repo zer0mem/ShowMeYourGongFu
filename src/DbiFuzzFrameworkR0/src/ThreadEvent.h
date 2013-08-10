@@ -10,11 +10,28 @@
 #include "../../Common/utils/ProcessCtx.h"
 #include "../../Common/utils/SyscallCallbacks.hpp"
 
+#include "Common/Constants.h"
+#include "../../Common/FastCall/FastCall.h"
+
+//my pushaq implementation is in reverse order as intel pushad -> rework in the future
+#ifdef FUZZX64
+#define FLAGS REG_X64_COUNT
+#elif FUZZX86
+#define FLAGS REG_X86_COUNT
+#endif
+
+enum Retf
+{
+	SEGMENT_SEL = FLAGS,
+	RETURN,
+	CONTEXT_COUNT
+};
+
 struct EVENT_THREAD_INFO 
 {
 	HANDLE ProcessId;
 	void* EventSemaphor;
-	ULONG_PTR GeneralPurposeContext[REG_COUNT];
+	PLATFORM_REG_TYPE GeneralPurposeContext[REG_COUNT];
 
 	EVENT_THREAD_INFO(
 		__in HANDLE processId
@@ -23,11 +40,11 @@ struct EVENT_THREAD_INFO
 	}
 
 	void SetContext(
-		__in ULONG_PTR reg[REG_COUNT]
+		__in PLATFORM_REG_TYPE reg[REG_COUNT]
 		)
 	{
 		*GeneralPurposeContext = *reg;
-		EventSemaphor = reinterpret_cast<void*>(reg[EDX]);//enum RDX != EDX
+		EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
 	}
 };
 

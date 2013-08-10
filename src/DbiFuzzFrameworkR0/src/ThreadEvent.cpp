@@ -90,7 +90,7 @@ bool CThreadEvent::MonitorFastCall(
 		return false;
 	}
 
-	m_monitorThreadInfo.SetContext(reg);
+	//m_monitorThreadInfo.SetContext(reg);
 	return FlipSemaphore(m_currentThreadInfo);
 }
 #include "DbiMonitor.h"
@@ -100,53 +100,55 @@ bool CThreadEvent::EventCallback(
 	)
 {
 	DbgPrint("\nEventCallback %p %p %p\n", reg[RCX], reg[RBX], reg);
-	KeBreak();
 
 	if (!CDbiMonitor::GetInstance().GetBranchStack().IsEmpty())
 	{
-		switch(reg[RCX])
+		CMdl r_auto_context(reinterpret_cast<const void*>((PLATFORM_REG_TYPE)reg[DBI_REG_CONTEXT]), sizeof(PLATFORM_REG_TYPE) * CONTEXT_COUNT);
+		PLATFORM_REG_TYPE* r_context = reinterpret_cast<PLATFORM_REG_TYPE*>(r_auto_context.Map());
+		if (r_context)
 		{
-		case SYSCALL_TRACE_FLAG:
+			switch(reg[DBI_ACTION])
 			{
-				CMdl r3_reg(reinterpret_cast<const void*>((ULONG)reg[RBX]), sizeof(ULONG) * REGx86_COUNT);
-				ULONG* r3reg = reinterpret_cast<ULONG*>(r3_reg.Map());
-				if (r3reg)
+			case SYSCALL_TRACE_FLAG:
 				{
-					DbgPrint("\nr3 mapped regs %p\n", r3reg);
-					KeBreak();
+					DbgPrint("\nr3 mapped regs %p | BTF ? %p\n", r_context, r_context[RBX]);
 
 					BRANCH_INFO branch_i = CDbiMonitor::GetInstance().GetBranchStack().Pop();
-					
-					//TODO : disable trap flag in host when EIP is patched not here!!!!
-					r3reg[RETURN] = (r3reg[EFLAGS] | TRAP);
-					r3reg[EFLAGS] = (ULONG)branch_i.DstEip;
 
-					DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG> : %p %p [-> %p] %p\n", branch_i.SrcEip, branch_i.DstEip, reg[RDI], reg);
+					//TODO : disable trap flag in host when EIP is patched not here!!!!					
+					/*
+					 * switch return & flags for RETF in ring3
+					 * set RETF to the DstEip
+					 */
+					r_context[RETURN] = (r_context[FLAGS] | TRAP);
+					r_context[FLAGS] = (PLATFORM_REG_TYPE)branch_i.DstEip;
 
-					ULONG_PTR reg64[REG_COUNT];
-					for (int i = 0; i < REGx86_COUNT; i++)
-						reg64[i] = r3reg[i];
+					//set info
+					reg[RAX] = (PLATFORM_REG_TYPE)branch_i.SrcEip;
 
-					IRET* iret = PPAGE_FAULT_IRET(reg);
-					iret->Return = reinterpret_cast<const void*>(reg[RDI]);
+					DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG> : %p %p [-> %p] %p\n", branch_i.SrcEip, branch_i.DstEip, reg[DBI_R3TELEPORT], reg);
 
-					m_currentThreadInfo.SetContext(reg64);
-					KeBreak();
-					return true;
+					m_currentThreadInfo.SetContext(r_context);//bad -> reg should go inside instead!!
+
+					break;
 				}
-
+			case SYSCALL_PATCH_MEMORY:
 				break;
+			case SYSCALL_MAIN:
+				//m_currentThreadInfo.SetContext(reg);
+				return true;
+			default:
+				return false;
 			}
-		case SYSCALL_PATCH_MEMORY:
-			break;
-		case SYSCALL_MAIN:
-			m_currentThreadInfo.SetContext(reg);
-			return true;
-		default:
-			return false;
-		}
+		}		
 
-		m_currentThreadInfo.SetContext(reg);
+		KeBreak();
+		//if fastcall implemented by page fault handler!!
+		IRET* iret = PPAGE_FAULT_IRET(reg);
+		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+		return true;
+
+		//m_currentThreadInfo.SetContext(reg);
 		return FlipSemaphore(m_monitorThreadInfo);
 	}
 	return false;

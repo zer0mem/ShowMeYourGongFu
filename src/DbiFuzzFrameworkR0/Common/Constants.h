@@ -11,6 +11,13 @@
 #include "../Common/utils/AVL.hpp"
 #include "../Common/utils/HashString.hpp"
 
+#ifdef FUZZX86
+typedef ULONG PLATFORM_REG_TYPE;
+typedef LONG PLATFORM_REG_STYPE;
+#elif FUZZX64
+typedef ULONG64 PLATFORM_REG_TYPE;
+typedef LONG64 PLATFORM_REG_STYPE;
+#endif
 enum
 {
 	ExtTrapTrace,

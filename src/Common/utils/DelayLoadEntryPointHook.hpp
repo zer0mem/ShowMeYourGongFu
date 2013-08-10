@@ -82,6 +82,11 @@ public:
 		return !!m_addrToHook;
 	}
 
+	void* GetAddrToHook()
+	{
+		return m_addrToHook;
+	}
+
 protected:
 	void* m_addrToHook;
 	const void* m_addrOfHook;

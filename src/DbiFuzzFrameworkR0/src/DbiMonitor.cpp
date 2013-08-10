@@ -176,7 +176,7 @@ bool CDbiMonitor::GetProcess(
 	__inout CProcess2Fuzz** process
 	)
 {
-	return m_procMonitor.GetProcessWorker().GetProcessUnsafe(processId, process);
+	return m_procMonitor.GetProcessWorker().GetProcess(processId, process);
 }
 
 //dbgprint helper
@@ -196,12 +196,6 @@ EXTERN_C void* SysCallCallback(
 	__inout ULONG_PTR reg [REG_COUNT]
 	)
 {
-	for (int i = 0; !CDbiMonitor::GetInstance().PrintfStack.IsEmpty() && i < 0x10; i++)
-	{
-		ULONG_PTR info = CDbiMonitor::GetInstance().PrintfStack.Pop();
-		DbgPrint("\n >>PrintfStack : %p\n", info);
-	}
-
 	CProcess2Fuzz* fuzzed_proc;
 	if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 	{
@@ -223,7 +217,16 @@ EXTERN_C void* PageFault(
 {
 #define USER_MODE_CS 0x1
 	IRET* iret = PPAGE_FAULT_IRET(reg);
-	
+	/*
+	if (FAST_CALL == readcr2())
+		DbgPrint("\n >>> @PageFault %p %p [& %p] --> %s\n", reg[DBI_IOCALL], reg[DBI_ACTION], iret->Return, (iret->CodeSegment & USER_MODE_CS) ? "usermode cs" : "kernelmode cs");
+		*/
+	for (int i = 0; !CDbiMonitor::GetInstance().PrintfStack.IsEmpty() && i < 0x10; i++)
+	{
+		ULONG_PTR info = CDbiMonitor::GetInstance().PrintfStack.Pop();
+		DbgPrint("\n >>PrintfStack : %p\n", info);
+	}
+
 	//in kernelmode can cause another PF and skip recursion handling :P
 
 	//previous mode == usermode ?
@@ -274,66 +277,118 @@ void CDbiMonitor::TrapHandler(
 		{
 			ins_addr -= ins_len;
 
-			//if (0xBADF00D0 == (ULONG)reg[RBX] || 0xBADF00D1 == (ULONG)reg[RBX])
+			//print some info src-dst
+			ULONG_PTR src = 0;
+			for (size_t i = rdmsr(MSR_LASTBRANCH_TOS); i >= 0; i--)
 			{
-				//print some info src-dst
-				ULONG_PTR src = 0;
-				for (BYTE i = 0; i < 4; i++)
+				if (rdmsr(MSR_LASTBRANCH_0_TO_IP + i) == ins_addr)
 				{
-					if (rdmsr(MSR_LASTBRANCH_0_TO_IP + i) == ins_addr)
-					{
-						src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
+					src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
 
-						break;
+					break;
+				}
+			}
+
+			//set-up next BTF hook
+			ULONG_PTR rflags = 0;
+			if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
+			{					
+				if (rflags & TRAP)
+				{
+					if (CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
+					{
+						CDbiMonitor::GetInstance().PrintfStack.Push(0x87654321);
+						CDbiMonitor::GetInstance().PrintfStack.Push(src);
+						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
+						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
+						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
+
+						ULONG_PTR info = 1;
+						vmread(VMX_VMCS32_RO_EXIT_INSTR_INFO, &info);
+						BRANCH_INFO branch_i;
+						branch_i.DstEip = reinterpret_cast<const void*>(ins_addr);
+						branch_i.SrcEip = reinterpret_cast<const void*>(src);
+						branch_i.Trap = rflags;
+						branch_i.Info = info;
+						CDbiMonitor::GetInstance().GetBranchStack().Push(branch_i);
+						ins_addr = FAST_CALL;
+
+						//disable trap flag and let handle it by PageFault Hndlr
+						vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
+					}
+					else if (src)
+					{
+						CDbiMonitor::GetInstance().PrintfStack.Push(0xBADF00D0);
+						CDbiMonitor::GetInstance().PrintfStack.Push(src);
+						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
+						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
+						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
+
+						ULONG_PTR dbg_ctl = (rdmsr(IA32_DEBUGCTL) & (~BTF));
+						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, dbg_ctl & SEG_D_LIMIT);
+						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_HIGH, dbg_ctl >> 32);
+					}
+					else
+					{
+						CDbiMonitor::GetInstance().PrintfStack.Push(0x12345678);
+						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr + ins_len);
+						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
+						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
+						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
+
+						ULONG_PTR dbg_ctl = (rdmsr(IA32_DEBUGCTL) | BTF | LBR);
+						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, dbg_ctl & SEG_D_LIMIT);
+						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_HIGH, dbg_ctl >> 32);
 					}
 				}
-
-
-				BRANCH_INFO branch_i;
-				branch_i.DstEip = reinterpret_cast<const void*>(ins_addr);
-				branch_i.SrcEip = reinterpret_cast<const void*>(src);
-				CDbiMonitor::GetInstance().GetBranchStack().Push(branch_i);
-				
-				CDbiMonitor::GetInstance().PrintfStack.Push(0xBADF00D0);
-				CDbiMonitor::GetInstance().PrintfStack.Push(src);
-				CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-				
-				//set-up next BTF hook
-				ULONG_PTR rflags = 0;
-				if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
-					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-
-				vmwrite(VMX_VMCS64_GUEST_RIP, FAST_CALL);
-/*
-				//BTF - trace marker
-				CDbiMonitor::GetInstance().GetPrintfStack().Push(0xBADF00D0);
-
-				//set-up next BTF hook
-				ULONG_PTR rflags = 0;
-				if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
-					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags | TRAP));
-
-				//HYPERVISOR DONT CLEAN IA32_DEBUGCTL ==> BTF FLAG!!!
-
-				//if more processors, it would be probably necessary to handle also TRAP_FLAG, casue switch to another CPU
-				//with unset BTF invoke just single-step
-				if (!src)
+				else
 				{
-					CDbiMonitor::GetInstance().GetPrintfStack().Push(0x77665670);
-					CDbiMonitor::GetInstance().GetPrintfStack().Push(ins_addr);
-					CDbiMonitor::GetInstance().GetPrintfStack().Push(0x77665671);
-
-					//turn off TRAP_page_fault
-					ULONG_PTR intercepts;
-					vmread(VMX_VMCS_CTRL_EXCEPTION_BITMAP, &intercepts);
-					intercepts &= (~BTS(TRAP_page_fault));
-					vmwrite(VMX_VMCS_CTRL_EXCEPTION_BITMAP, intercepts);
+					CDbiMonitor::GetInstance().PrintfStack.Push(0xDEADCAFE);
+					CDbiMonitor::GetInstance().PrintfStack.Push(src);
+					CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
+					CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
+					CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
 				}
-
-				vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
-*/
 			}
+			else
+			{
+				CDbiMonitor::GetInstance().PrintfStack.Push(0x66666666);
+				CDbiMonitor::GetInstance().PrintfStack.Push(0x66666666);
+				CDbiMonitor::GetInstance().PrintfStack.Push(0x66666666);
+				CDbiMonitor::GetInstance().PrintfStack.Push(0x66666666);
+			}
+
+			vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
+			/*
+
+			//HYPERVISOR DONT CLEAN IA32_DEBUGCTL ==> BTF FLAG!!!
+
+			//if more processors, it would be probably necessary to handle also TRAP_FLAG, casue switch to another CPU
+			//with unset BTF invoke just single-step
+			if (!src)
+			{
+			//turn off TRAP_page_fault
+			ULONG_PTR intercepts;
+			vmread(VMX_VMCS_CTRL_EXCEPTION_BITMAP, &intercepts);
+			intercepts &= (~BTS(TRAP_page_fault));
+			vmwrite(VMX_VMCS_CTRL_EXCEPTION_BITMAP, intercepts);
+			}
+			*/
 		}
+		else
+		{
+			CDbiMonitor::GetInstance().PrintfStack.Push(0x55555555);
+			CDbiMonitor::GetInstance().PrintfStack.Push(0x55555555);
+			CDbiMonitor::GetInstance().PrintfStack.Push(0x55555555);
+			CDbiMonitor::GetInstance().PrintfStack.Push(0x55555555);
+		}
+	}
+	else
+	{
+		CDbiMonitor::GetInstance().PrintfStack.Push(0x77777777);
+		CDbiMonitor::GetInstance().PrintfStack.Push(0x77777777);
+		CDbiMonitor::GetInstance().PrintfStack.Push(0x77777777);
+		CDbiMonitor::GetInstance().PrintfStack.Push(0x77777777);
 	}
 }
 

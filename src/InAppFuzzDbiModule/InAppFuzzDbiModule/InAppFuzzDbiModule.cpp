@@ -31,19 +31,16 @@ extern "C" void fast_call_monitor(
 #define DLLEXPORT extern "C" __declspec(dllexport, naked) 
 
 __declspec(naked)
-void __fastcall FastCallEvent(
+void __stdcall FastCallEvent(
 	__in ULONG_PTR fastCall
 	)
 {
 	__asm
 	{
-								; on stack already return eip
-		push cs					; push place for target segment
-		pop eax
-		movzx eax, eax
-		push eax
-		pushfd					; push place for flags
+		pushfd
 		pushad
+
+		lea ebp, [esp + REG_X86_COUNT * 4]; ebp points to flags -> push ebp in classic prologue
 
 		mov eax, esp
 		push eax				; push semaphore onto stack
@@ -55,7 +52,7 @@ void __fastcall FastCallEvent(
 
 		mov dword ptr [esp + DBI_FUZZAPP_INFO_OUT * 4], eax
 
-		;mov ecx, fastCall
+		mov ecx, fastCall
 		mov dword ptr [esp + DBI_ACTION * 4], ecx ;fastCall
 
 		mov dword ptr [esp + DBI_SEMAPHORE * 4], ebx
@@ -73,7 +70,16 @@ _WaitForFuzzEvent:
 
 		pop eax
 		popad
-		iretd					; perform far ret, due to pop flags -> further trap flag tracing...
+
+		pushad
+		mov dword ptr [esp + DBI_IOCALL * 4], FAST_CALL
+		mov dword ptr [esp + DBI_ACTION * 4], SYSCALL_TRACE_RET
+		popad
+		popfd
+
+		add esp, 2 * 4; pop ret and param from stack
+		mov eax, [ebp] ; DBI_IOCALL
+		int 3 ; not supossed to exec!
 	}
 }
 

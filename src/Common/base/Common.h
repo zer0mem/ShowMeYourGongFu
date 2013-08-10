@@ -101,7 +101,6 @@ public:
 	void SetRSP(__in ULONG_PTR regVal) { SetReg(RSP, regVal); }
 	void SetFLAGS(__in ULONG_PTR flags) { SetReg(m_is64 ? REG_X64_COUNT : REG_X86_COUNT, flags); }
 
-protected:
 	void SetReg(
 		__in size_t regId,
 		__in ULONG_PTR regVal
@@ -111,7 +110,7 @@ protected:
 		{
 			((reinterpret_cast<ULONG64*>(m_regs))[regId]) = (ULONG64)regVal;
 		}
-		else
+		else if (regId < REG_X86_COUNT)
 		{
 			((reinterpret_cast<ULONG*>(m_regs))[regId]) = (ULONG)regVal;
 		}
@@ -125,10 +124,11 @@ protected:
 		{
 			return (ULONG_PTR)((reinterpret_cast<ULONG64*>(m_regs))[regId]);
 		}
-		else
+		else if (regId <= REG_X86_COUNT)//== REG_X86_COUNT => flags
 		{
 			return (ULONG_PTR)((reinterpret_cast<ULONG*>(m_regs))[regId]);
 		}
+		return 0;
 	}
 
 protected:

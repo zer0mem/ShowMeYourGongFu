@@ -164,6 +164,7 @@ struct LOADED_IMAGE :
 {
 	bool Is64;
 	ULONG EntryPoint;
+	WCHAR* ImgName;
 
 	LOADED_IMAGE() : COMPARABLE_ID(NULL)
 	{
@@ -176,15 +177,12 @@ struct LOADED_IMAGE :
 	{
 	}
 
-	LOADED_IMAGE(
+	explicit LOADED_IMAGE(
 		__in IMAGE_INFO* imgInfo
-		) : COMPARABLE_ID(
-				CRange<void>(
-					imgInfo->ImageBase, 
-					reinterpret_cast<void*>((ULONG_PTR)imgInfo->ImageBase + imgInfo->ImageSize)
-					)
-				)
+		) : COMPARABLE_ID(CRange<void>(imgInfo->ImageBase))
 	{
+		Id.SetSize(imgInfo->ImageSize);
+
 		CPE pe(imgInfo->ImageBase);
 		Is64 = pe.Is64Img();
 		EntryPoint = pe.Entrypoint();
@@ -195,9 +193,14 @@ struct LOADED_IMAGE :
 		return Id.Begin();
 	}
 
-	void* ImageSize()
+	void* ImageLimit()
 	{
 		return Id.End();
+	}
+
+	size_t ImageSize()
+	{
+		return ((size_t)ImageLimit() - (size_t)ImageBase() + 1);
 	}
 };
 

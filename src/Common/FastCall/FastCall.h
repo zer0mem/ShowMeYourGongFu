@@ -15,6 +15,7 @@ enum
 	SYSCALL_INFO_FLAG,
 	SYSCALL_MAIN,
 	SYSCALL_PATCH_MEMORY,
+	SYSCALL_TRACE_RET,
 };
 
 enum
@@ -28,6 +29,7 @@ enum
 	DBI_FUZZAPP_INFO_OUT = RDX,
 };
 
+#define DBI_FLAGS REG_COUNT
 
 #pragma pack(push, 1)
 
@@ -35,6 +37,8 @@ struct BRANCH_INFO
 {
 	const void* DstEip;
 	const void* SrcEip;
+	ULONG_PTR Trap;
+	ULONG_PTR Info;
 };
 
 struct MEMORY_ACCESS
@@ -45,7 +49,7 @@ struct MEMORY_ACCESS
 
 struct DBI_OUT_CONTEXT
 {
-	ULONG_PTR GeneralPurposeContext;
+	ULONG_PTR GeneralPurposeContext[REG_COUNT + 1];
 	BRANCH_INFO BranchInfo;
 	MEMORY_ACCESS MemoryInfo;
 };

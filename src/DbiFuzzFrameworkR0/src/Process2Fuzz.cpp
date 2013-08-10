@@ -81,14 +81,20 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 		if (!m_epHook.IsInitialized())
 			m_epHook.InitBase(imageInfo->ImageBase);
 
-		(void)m_loadedImgs.Push(LOADED_IMAGE(imageInfo));
 
 		UNICODE_STRING image_name;
 
+		LOADED_IMAGE img(imageInfo);
 		if (ResolveImageName(fullImageName->Buffer, 
 			fullImageName->Length / sizeof(fullImageName->Buffer[0]), 
 			&image_name))
 		{
+			img.ImgName = new WCHAR[(image_name.Length + 2) >> 1];
+			memcpy(img.ImgName, image_name.Buffer, image_name.Length);
+			img.ImgName[image_name.Length >> 1] = 0;
+
+			(void)m_loadedImgs.Push(img);
+
 			if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(image_name)))
 			{
 				KeBreak();
@@ -208,10 +214,9 @@ bool CProcess2Fuzz::Syscall(
 		if (fuzz_thread->WaitForSyscallEpilogue())
 		{				
 			if (fuzz_thread->LastMemoryInfo.Write &&
-				//CMemoryRange((BYTE*)fuzz_thread->MemoryInfo.Memory, fuzz_thread->MemoryInfo.Size, 0).IsInRange((BYTE*)0x2340000))
 				!m_stacks.Find(CRange<ULONG_PTR>(reinterpret_cast<ULONG_PTR*>(fuzz_thread->LastMemoryInfo.Memory))))
 			{
-				SetUnwriteable(fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size);
+				//SetUnwriteable(fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size);
 			}
 				
 			DbgPrint("\n > @Epilogue %p %x %s\n", fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size, fuzz_thread->LastMemoryInfo.Write ? "attempt to write" : "easy RE+ attempt");
@@ -237,7 +242,6 @@ bool CProcess2Fuzz::PageFault(
 		{
 			//handle branch tracing - callback from HV
 			iret->Return = m_extRoutines[ExtTrapTrace];
-			DbgPrint("\n*LOAD_RSP(reg) ->*%p<- %p; %p [%p] %p", iret, *HOOK_ORIG_RSP(reg), reg, (reg + REG_COUNT), iret->Return);
 			return true;
 		}
 	}
@@ -256,31 +260,25 @@ bool CProcess2Fuzz::PageFault(
 					if (m_threads.Find(CThreadEvent(), &fuzz_thread))
 					{
 						if (m_epHook.IsHooked())
+						{
+							LOADED_IMAGE hook(m_epHook.GetAddrToHook());
+
 							m_epHook.UninstallHook();
 
-						return fuzz_thread->EventCallback(img, reg);
+							if (m_loadedImgs.Find(hook, &img))
+							{
+								return fuzz_thread->EventCallback(img, reg, m_loadedImgs);
+							}
+							else
+							{
+								DbgPrint("\nnot found!!!!");
+								KeBreak();
+							}
+						}
+
+						return fuzz_thread->EventCallback(img, reg, m_loadedImgs);
 					}
 					KeBreak();
-				}
-			}
-
-			//temporary for demo
-			if (0x2340000 == (ULONG_PTR)fault_addr)
-				return false;
-
-			if (0x2340002 == (ULONG_PTR)fault_addr)
-				KeBreak();
-
-			if (m_nonWritePages.Find(CMemoryRange(fault_addr, sizeof(BYTE))))
-			{
-				m_nonWritePages.Pop(CMemoryRange(fault_addr, sizeof(BYTE)));
-				if (!CMMU::IsWriteable(fault_addr))
-				{
-					CMMU::SetWriteable(fault_addr, sizeof(ULONG_PTR));
-					//+set trap after instruction + clear BTF, to set unwriteable!
-
-					//sync problem, not locked and acces via ref, via ref counting ...
-					return true;
 				}
 			}
 		}
@@ -298,6 +296,28 @@ bool CProcess2Fuzz::PageFault(
 					return true;
 				}
 			}
+		}
+	}
+
+
+	//temporary for demo
+	if (0x2340000 == (ULONG_PTR)fault_addr)
+		return false;
+
+	if (0x2340002 == (ULONG_PTR)fault_addr)
+		KeBreak();
+
+	if (m_nonWritePages.Find(CMemoryRange(fault_addr, sizeof(BYTE))))
+	{
+		KeBreak();
+		m_nonWritePages.Pop(CMemoryRange(fault_addr, sizeof(BYTE)));
+		if (!CMMU::IsWriteable(fault_addr))
+		{
+			CMMU::SetWriteable(fault_addr, sizeof(ULONG_PTR));
+			//+set trap after instruction + clear BTF, to set unwriteable!
+
+			//sync problem, not locked and acces via ref, via ref counting ...
+			return true;
 		}
 	}
 

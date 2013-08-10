@@ -89,7 +89,7 @@ protected:
 		if (IsOverlaping(left, right))
 			return false;
 		
-		return (left.m_end > right.m_end);
+		return (left.m_begin > right.m_begin);
 	}
 
 	friend

@@ -13,34 +13,7 @@
 #include "Common/Constants.h"
 #include "../../Common/FastCall/FastCall.h"
 
-enum Retf
-{
-	FLAGS = 0,
-	SEGMENT_SEL,
-	RETURN,
-	CONTEXT_COUNT
-};
-
-class CRegXTypeRetf :
-	public CRegXType
-{
-public:
-	CRegXTypeRetf(
-		__in bool is64,
-		__in void* regs
-		) : CRegXType(is64, regs) 
-	{
-	}
-
-	ULONG_PTR GetRET() { return GetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + RETURN); }
-	ULONG_PTR GetSEG() { return GetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + SEGMENT_SEL); }
-
-	//switched flags with ret => because of iret : call smth; stmh : push cs, pushf ==> [ret, cs, flags] == reverse order
-	void SetRET(__in ULONG_PTR ret) { SetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + FLAGS, ret); }
-	void SetFLAGS(__in ULONG_PTR flags) { SetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + RETURN, flags); }
-
-	void SetSEG(__in ULONG_PTR seg) { SetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + SEGMENT_SEL, seg); }
-};
+#include "../../Common/utils/LockedContainers.hpp"
 
 struct EVENT_THREAD_INFO 
 {
@@ -56,19 +29,15 @@ struct EVENT_THREAD_INFO
 
 	void SetContext(
 		__in ULONG_PTR reg[REG_COUNT],
-		__in_bcount(ctxSize) void* generalPurposeContext,
-		__in size_t ctxSize,
+		__in CRegXType& regxtype,
 		__in BRANCH_INFO* branchInfo = NULL,
 		__in MEMORY_ACCESS* memInfo = NULL
 		)
 	{
-		if (ctxSize > sizeof(ULONG_PTR[REG_COUNT]))
-		{
-			KeBreak();
-			return;
-		}
+		for (size_t i = 0; i < REG_COUNT; i++)
+			DbiOutContext.GeneralPurposeContext[i] = (ULONG_PTR)regxtype.GetReg(i);
 
-		memcpy(&DbiOutContext.GeneralPurposeContext, generalPurposeContext, ctxSize);
+		DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = (ULONG_PTR)regxtype.GetFLAGS();
 
 		if (branchInfo)
 			DbiOutContext.BranchInfo = *branchInfo;
@@ -118,7 +87,8 @@ public:
 	__checkReturn
 	bool EventCallback(
 		__in LOADED_IMAGE* img, 
-		__in ULONG_PTR reg[REG_COUNT]
+		__in ULONG_PTR reg[REG_COUNT],
+		__in CLockedAVL<LOADED_IMAGE>& imgs
 	);
 
 protected:

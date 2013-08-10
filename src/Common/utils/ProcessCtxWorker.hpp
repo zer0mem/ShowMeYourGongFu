@@ -98,13 +98,13 @@ public:
 		__inout TYPE** out
 		)
 	{
-		PROCESS_CTX* proc_ctx_id;
-		if (m_avl.Find(&PROCESS_CTX(processId), &proc_ctx_id))
+		PROCESS_CTX* proc_ctx_id = NULL;
+		bool ret = (m_avl.Find(&PROCESS_CTX(processId), &proc_ctx_id));
 		{
-			if (proc_ctx_id->Value)
+			if (proc_ctx_id && proc_ctx_id->Value)
 			{
 				*out = proc_ctx_id->Value;
-				return true;
+				return ret;
 			}
 		}
 		return false;

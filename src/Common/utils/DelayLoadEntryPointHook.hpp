@@ -51,7 +51,7 @@ public:
 
 	void InstallHook()
 	{
-		if (!m_relHook && CMMU::IsValid(m_addrToHook))
+		if (!m_relHook && m_addrOfHook && CMMU::IsValid(m_addrToHook))
 		{
 			m_relHook = new CRelCallHook(m_addrToHook, m_addrOfHook);
 			if (!m_relHook->IsHooked())
@@ -67,12 +67,13 @@ public:
 		m_addrToHook = NULL;
 		m_addrOfHook = NULL;
 		delete m_relHook;
+		m_relHook = NULL;
 	}
 
 	__checkReturn
 	bool IsHooked()
 	{
-		return (!!m_relHook && m_relHook->IsHooked());
+		return (!!m_relHook && m_addrToHook && m_addrOfHook && m_relHook->IsHooked());
 	}
 
 	__checkReturn

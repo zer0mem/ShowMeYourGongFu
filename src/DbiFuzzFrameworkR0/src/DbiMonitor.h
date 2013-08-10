@@ -17,12 +17,6 @@
 
 #include "../Common/Stack.hpp"
 
-struct BRANCH_INFO 
-{
-	const void* DstEip;
-	const void* SrcEip;
-};
-
 class CDbiMonitor : 
 	public CCRonos,
 	public CSingleton<CDbiMonitor>

@@ -37,72 +37,94 @@ void __fastcall FastCallEvent(
 {
 	__asm
 	{
-					; on stack already return eip
-		push cs		; push place for target segment
-		pushfd		; push place for flags
-
+								; on stack already return eip
+		push cs					; push place for target segment
+		pop eax
+		movzx eax, eax
+		push eax
+		pushfd					; push place for flags
 		pushad
+
+		mov eax, esp
+		push eax				; push semaphore onto stack
 		mov ebx, esp
 
-		xor eax, eax
-		push eax
+		;set information for dbi
+		pushad
+		mov dword ptr [esp + DBI_IOCALL * 4], FAST_CALL
 
-		lea edi, [_WaitForFuzzEvent]
-		mov edx, esp ; set semaphore
-		mov eax, FAST_CALL
-		mov eax, [eax]
+		mov dword ptr [esp + DBI_FUZZAPP_INFO_OUT * 4], eax
+
+		;mov ecx, fastCall
+		mov dword ptr [esp + DBI_ACTION * 4], ecx ;fastCall
+
+		mov dword ptr [esp + DBI_SEMAPHORE * 4], ebx
+
+		lea eax, [_WaitForFuzzEvent]
+		mov dword ptr [esp + DBI_R3TELEPORT * 4], eax
+		popad
+
+		;invoke fast call
+		mov eax, [ebp] ; DBI_IOCALL
 
 _WaitForFuzzEvent:
-		int 3
 		cmp byte ptr[esp], 0	; thread friendly :P
 		;jz _WaitForFuzzEvent
 
-		add esp, 4
-		;mov dword ptr [esp + RAX * 4], eax
+		pop eax
 		popad
-
-		retf		; perform far ret, due to pop flags -> further trap flag tracing...
+		iretd					; perform far ret, due to pop flags -> further trap flag tracing...
 	}
 }
 
 __declspec(naked)
 void __fastcall FastCallMonitor(
-	__in HANDLE threadId,
 	__in ULONG_PTR fastCall,
-	__inout ULONG_PTR* reg,
-	__inout ULONG_PTR* addr
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout void* info
 	)
 {
 	__asm
 	{
-		push cs
-		pushf
+		push ebp
+		mov ebp, esp
 		pushad
+		
+		mov eax, esp
+		push eax				; push semaphore onto stack
+		mov ebx, esp
 
-		mov ecx, esp
-		mov eax, FAST_CALL
-		mov eax, [FAST_CALL]
+		pushad
+		mov dword ptr [esp + DBI_IOCALL * 4], FAST_CALL
 
-		xor eax, eax
-		push eax
+		;mov ecx, fastCall
+		mov dword ptr [esp + DBI_ACTION * 4], ecx ;fastCall
+
+		;mov edx, procdId
+		mov dword ptr [esp + DBI_FUZZAPP_PROC_ID * 4], edx ;procdId
+
+		mov edx, threadId
+		mov dword ptr [esp + DBI_FUZZAPP_THREAD_ID * 4], edx ;threadId
+
+		mov dword ptr [esp + DBI_SEMAPHORE * 4], ebx
+
+		lea eax, [_WaitForFuzzEvent]
+		mov dword ptr [esp + DBI_R3TELEPORT * 4], eax
+
+		mov eax, info
+		mov dword ptr [esp + DBI_FUZZAPP_INFO_OUT * 4], eax
+		popad
+		mov eax, [ebp]
 
 _WaitForFuzzEvent:
+		int 3
 		cmp dword ptr[esp], 0	; thread friendly :P
-		jz _WaitForFuzzEvent
+		;jz _WaitForFuzzEvent
 
-		pop eax
-		mov dword ptr[addr], eax ; return eip of fuzzed process
-
-		;copy context
-		mov edi, reg
-		mov esi, esp
-		mov ecx, REG_X86_COUNT
-		rep movsd
-
+		add esp, 4		
 		popad
-		add esp, 4
-		popf
-
+		pop ebp
 		ret
 	}
 }
@@ -129,10 +151,9 @@ void ExtMain()
 
 EXTERN_C __declspec(dllexport) 
 ULONG_PTR TrapTrace(
-	__inout ULONG_PTR* reg
+	__inout DBI_OUT_CONTEXT* dbiOut
 	)
 {
-	ULONG_PTR ret;
-	FastCallMonitor(NULL, SYSCALL_TRACE_FLAG, reg, &ret);
-	return ret;
+	FastCallMonitor(SYSCALL_TRACE_FLAG, (HANDLE)NULL, (HANDLE)NULL, dbiOut);
+	return (ULONG_PTR)(dbiOut->BranchInfo.DstEip);
 }

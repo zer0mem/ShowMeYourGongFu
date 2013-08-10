@@ -9,8 +9,6 @@
 #ifndef __DRV_COMMON_H__
 #define __DRV_COMMON_H__
 
-#pragma pack(push, 1)
-
 #include "../Common/base/Common.h"
 #include "../Common/utils/Vad.h"
 
@@ -20,6 +18,8 @@
 #define VADSameThreadApcFlags 0x434
 #define VADFlags 0x2fc
 #define VADVadRoot 0x590
+
+#pragma pack(push, 1)
 
 struct _MM_AVL_NODE
 {

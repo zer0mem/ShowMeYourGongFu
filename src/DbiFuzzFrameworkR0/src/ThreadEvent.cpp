@@ -75,6 +75,7 @@ void CThreadEvent::EpilogueProceeded()
 //invoked from monitor
 __checkReturn
 bool CThreadEvent::MonitorFastCall( 
+	__in LOADED_IMAGE* img,
 	__in ULONG_PTR reg[REG_COUNT] 
 	)
 {
@@ -93,65 +94,79 @@ bool CThreadEvent::MonitorFastCall(
 	//m_monitorThreadInfo.SetContext(reg);
 	return FlipSemaphore(m_currentThreadInfo);
 }
+
 #include "DbiMonitor.h"
 __checkReturn
 bool CThreadEvent::EventCallback( 
-	__in ULONG_PTR reg[REG_COUNT] 
+	__in LOADED_IMAGE* img,
+	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	DbgPrint("\nEventCallback %p %p %p\n", reg[RCX], reg[RBX], reg);
+	DbgPrint("\nEventCallback %p %p %p\n", reg[DBI_ACTION], reg[DBI_R3TELEPORT], reg);
+	size_t ctx_size = (img->Is64 ? sizeof(ULONG_PTR) * REG_X64_COUNT : sizeof(ULONG) * REG_X86_COUNT);
 
-	if (!CDbiMonitor::GetInstance().GetBranchStack().IsEmpty())
+	BRANCH_INFO* branch_info = NULL;
+	MEMORY_ACCESS* mem_info = NULL;
+
+	CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_FUZZAPP_INFO_OUT]), ctx_size);
+	void* r_context = r_auto_context.Map();
+	if (r_context)
 	{
-		CMdl r_auto_context(reinterpret_cast<const void*>((PLATFORM_REG_TYPE)reg[DBI_REG_CONTEXT]), sizeof(PLATFORM_REG_TYPE) * CONTEXT_COUNT);
-		PLATFORM_REG_TYPE* r_context = reinterpret_cast<PLATFORM_REG_TYPE*>(r_auto_context.Map());
-		if (r_context)
+		CRegXTypeRetf regsx(img->Is64, r_context);
+
+		switch(reg[DBI_ACTION])
 		{
-			switch(reg[DBI_ACTION])
+		case SYSCALL_TRACE_FLAG:
+			if (!CDbiMonitor::GetInstance().GetBranchStack().IsEmpty())
 			{
-			case SYSCALL_TRACE_FLAG:
-				{
-					DbgPrint("\nr3 mapped regs %p | BTF ? %p\n", r_context, r_context[RBX]);
+				BRANCH_INFO branch_i = CDbiMonitor::GetInstance().GetBranchStack().Pop();
+				branch_info = &branch_i;
 
-					BRANCH_INFO branch_i = CDbiMonitor::GetInstance().GetBranchStack().Pop();
+				//TODO : disable trap flag in host when EIP is patched not here!!!!					
+				/*
+				* swap return & flags for RETF in ring3 [original order is knowingly bad]
+				* set RETF to the DstEip
+				*/
+				regsx.SetFLAGS(regsx.GetFLAGS() | TRAP);
+				regsx.SetRET((ULONG_PTR)branch_i.DstEip);
 
-					//TODO : disable trap flag in host when EIP is patched not here!!!!					
-					/*
-					 * switch return & flags for RETF in ring3
-					 * set RETF to the DstEip
-					 */
-					r_context[RETURN] = (r_context[FLAGS] | TRAP);
-					r_context[FLAGS] = (PLATFORM_REG_TYPE)branch_i.DstEip;
+				//set info
+				reg[RAX] = (ULONG_PTR)branch_i.SrcEip;
 
-					//set info
-					reg[RAX] = (PLATFORM_REG_TYPE)branch_i.SrcEip;
+				DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG> : %p %p [-> %p] %p\n", branch_i.SrcEip, branch_i.DstEip, reg[DBI_R3TELEPORT], reg);
 
-					DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG> : %p %p [-> %p] %p\n", branch_i.SrcEip, branch_i.DstEip, reg[DBI_R3TELEPORT], reg);
-
-					m_currentThreadInfo.SetContext(r_context);//bad -> reg should go inside instead!!
-
-					break;
-				}
-			case SYSCALL_PATCH_MEMORY:
 				break;
-			case SYSCALL_MAIN:
-				//m_currentThreadInfo.SetContext(reg);
-				return true;
-			default:
-				return false;
 			}
-		}		
+			//return false//default handle it ...
+		default:
+			return false;
+		case SYSCALL_PATCH_MEMORY:
+			break;
+		case SYSCALL_MAIN:
+			{
+				DbgPrint("\n 1. EventCallback <SYSCALL_MAIN> : %p [-> %p] %p [%p]\n", regsx.GetRET(), reg[DBI_R3TELEPORT], reg, regsx.GetFLAGS());
+				
+				BRANCH_INFO branch_i;
+				branch_i.SrcEip = reinterpret_cast<void*>((ULONG_PTR)img->ImageBase() + img->EntryPoint);//reinterpret_cast<void*>(regsx.GetRET() - SIZE_REL_CALL);
+				branch_i.DstEip = branch_i.SrcEip;
+				branch_info = &branch_i;
+				  
+				regsx.SetFLAGS(regsx.GetFLAGS() | TRAP);
+				regsx.SetRET((ULONG_PTR)branch_i.DstEip);
 
-		KeBreak();
+				DbgPrint("\n 2. EventCallback <SYSCALL_MAIN> : %p [-> %p] %p [%p]\n", regsx.GetRET(), reg[DBI_R3TELEPORT], reg, regsx.GetFLAGS());
+			}
+			break;
+		}
 		//if fastcall implemented by page fault handler!!
 		IRET* iret = PPAGE_FAULT_IRET(reg);
 		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+		m_currentThreadInfo.SetContext(reg, r_context, ctx_size, branch_info, mem_info);
 		return true;
-
-		//m_currentThreadInfo.SetContext(reg);
-		return FlipSemaphore(m_monitorThreadInfo);
 	}
 	return false;
+	//m_currentThreadInfo.SetContext(reg);
+	return FlipSemaphore(m_monitorThreadInfo);
 }
 
 __checkReturn 
@@ -167,8 +182,7 @@ bool CThreadEvent::FlipSemaphore(
 		volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.Map());
 		if (semaphor)
 		{
-			InterlockedExchange8(semaphor, 1);
-			return true;
+			return (0 == InterlockedExchange8(semaphor, 1));
 		}
 	}
 	return false;

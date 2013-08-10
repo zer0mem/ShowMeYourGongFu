@@ -79,10 +79,7 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 	if (!imageInfo->SystemModeImage)
 	{
 		if (!m_epHook.IsInitialized())
-		{
-			KeBreak();
 			m_epHook.InitBase(imageInfo->ImageBase);
-		}
 
 		(void)m_loadedImgs.Push(LOADED_IMAGE(imageInfo));
 
@@ -94,6 +91,7 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 		{
 			if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(image_name)))
 			{
+				KeBreak();
 				CPE pe(imageInfo->ImageBase);
 				const void* func_name;
 				for (size_t i = 0;
@@ -182,16 +180,12 @@ bool CProcess2Fuzz::Syscall(
 	)
 {
 	if (!m_epHook.IsHooked())
-	{
-		//KeBreak();
-
 		m_epHook.InstallHook();
-	}
 
 
-//	if (FAST_CALL == (ULONG)reg[RAX])
+	if (FAST_CALL == reg[DBI_IOCALL])
 	{
-		switch (reg[RAX])
+		switch (reg[DBI_ACTION])//reg[RAX]
 		{
 		case SYSCALL_INFO_FLAG:
 			DbgPrint("\n > SYSCALL_INFO_FLAG < \n");
@@ -234,57 +228,79 @@ bool CProcess2Fuzz::PageFault(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
+	IRET* iret = PPAGE_FAULT_IRET(reg);
 	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 
-	CThreadEvent* fuzz_thread;
-	if (PsGetCurrentProcessId() == m_processId)
+	if (readcr2() == FAST_CALL)
 	{
-		if (FAST_CALL == readcr2())
+		if (FAST_CALL == (ULONG_PTR)iret->Return)
 		{
-			IRET* iret = PPAGE_FAULT_IRET(reg);
+			//handle branch tracing - callback from HV
+			iret->Return = m_extRoutines[ExtTrapTrace];
+			DbgPrint("\n*LOAD_RSP(reg) ->*%p<- %p; %p [%p] %p", iret, *HOOK_ORIG_RSP(reg), reg, (reg + REG_COUNT), iret->Return);
+			return true;
+		}
+	}
 
-			if (FAST_CALL == (ULONG_PTR)iret->Return)
+	LOADED_IMAGE* img;
+	if (m_loadedImgs.Find(LOADED_IMAGE(iret->Return), &img))
+	{
+		CThreadEvent* fuzz_thread;
+		if (PsGetCurrentProcessId() == m_processId)
+		{
+			if (FAST_CALL == readcr2())
 			{
-				//handle branch tracing - callback from HV
-				DbgPrint("*LOAD_RSP(reg) ->*%p<- %p; %p [%p]", iret, *HOOK_ORIG_RSP(reg), reg, (reg + REG_COUNT));
-				iret->Return = m_extRoutines[ExtTrapTrace];
-				return true;
+				if (readcr2() == reg[DBI_IOCALL])
+				{
+					//invoke callback to monitor
+					if (m_threads.Find(CThreadEvent(), &fuzz_thread))
+					{
+						if (m_epHook.IsHooked())
+							m_epHook.UninstallHook();
+
+						return fuzz_thread->EventCallback(img, reg);
+					}
+					KeBreak();
+				}
 			}
-			else if (readcr2() == reg[RAX])
-			{
-				//invoke callback to monitor
-				if (m_threads.Find(CThreadEvent(), &fuzz_thread))
-					return fuzz_thread->EventCallback(reg);
+
+			//temporary for demo
+			if (0x2340000 == (ULONG_PTR)fault_addr)
+				return false;
+
+			if (0x2340002 == (ULONG_PTR)fault_addr)
 				KeBreak();
-			}
-		}
 
-		//temporary for demo
-		if (0x2340000 == (ULONG_PTR)fault_addr)
-			return false;
-
-		if (0x2340002 == (ULONG_PTR)fault_addr)
-			KeBreak();
-
-		if (m_nonWritePages.Find(CMemoryRange(fault_addr, sizeof(BYTE))))
-		{
-			m_nonWritePages.Pop(CMemoryRange(fault_addr, sizeof(BYTE)));
-			if (!CMMU::IsWriteable(fault_addr))
+			if (m_nonWritePages.Find(CMemoryRange(fault_addr, sizeof(BYTE))))
 			{
-				CMMU::SetWriteable(fault_addr, sizeof(ULONG_PTR));
-				//+set trap after instruction + clear BTF, to set unwriteable!
+				m_nonWritePages.Pop(CMemoryRange(fault_addr, sizeof(BYTE)));
+				if (!CMMU::IsWriteable(fault_addr))
+				{
+					CMMU::SetWriteable(fault_addr, sizeof(ULONG_PTR));
+					//+set trap after instruction + clear BTF, to set unwriteable!
 
-				//sync problem, not locked and acces via ref, via ref counting ...
-				return true;
+					//sync problem, not locked and acces via ref, via ref counting ...
+					return true;
+				}
+			}
+		}
+		else
+		{
+			KeBreak();
+			fuzz_thread = NULL;
+			(void)m_threads.Find(CThreadEvent((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], NULL), &fuzz_thread);
+			if (fuzz_thread)
+			{
+				if (m_epHook.IsHooked())
+					m_epHook.UninstallHook();
+				if (fuzz_thread->MonitorFastCall(img, reg))
+				{
+					return true;
+				}
 			}
 		}
 	}
-	else
-	{
-		if (m_threads.Find(CThreadEvent((HANDLE)reg[R9], NULL), &fuzz_thread))
-			return fuzz_thread->EventCallback(reg);
-	}
-	
+
 	return false;
 }
 

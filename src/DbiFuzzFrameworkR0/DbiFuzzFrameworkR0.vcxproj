@@ -142,7 +142,7 @@
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>C:\Program Files (x86)\Windows Kits\8.0\Include\shared;C:\Program Files (x86)\Windows Kits\8.0\Include\km;C:\Program Files (x86)\Windows Kits\8.0\Include\um;%(AdditionalIncludeDirectories);$(ProjectDir)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>DBG; DEBUG; _DEBUG; WIN64; _WIN64;_M_AMD64;_AMD_64_; FUZZX86; %(PreprocessorDefinitions); HYPERVISOR;</PreprocessorDefinitions>
+      <PreprocessorDefinitions>DBG; DEBUG; _DEBUG; WIN64; _WIN64;_M_AMD64;_AMD_64_; %(PreprocessorDefinitions); HYPERVISOR;</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>true</MinimalRebuild>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>

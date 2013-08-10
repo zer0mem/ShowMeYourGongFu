@@ -274,7 +274,6 @@
     <ClInclude Include="..\Common\Kernel\MemoryMapping.h" />
     <ClInclude Include="Common\base\HVCommon.h" />
     <ClInclude Include="Common\CPU\vmcs.h" />
-    <ClInclude Include="drv_common.h" />
     <ClInclude Include="src\HyperVisor.h" />
     <ClInclude Include="src\VirtualizedCpu.h" />
     <ClInclude Include="src\VMX.h" />

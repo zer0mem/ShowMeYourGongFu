@@ -11,6 +11,8 @@
 #include "../../Common/utils/Range.h"
 #include "../../Common/base/ComparableId.hpp"
 
+#include "../../Common/utils/PE.hpp"
+
 //define ext-interface
 class CProcessContext
 {
@@ -158,20 +160,44 @@ struct CHILD_PROCESS :
 };
 
 struct LOADED_IMAGE : 
-	public COMPARABLE_ID<void*>
+	public COMPARABLE_ID< CRange<void> >
 {
-	ULONG_PTR ImageSize;
+	bool Is64;
+	ULONG EntryPoint;
+
+	LOADED_IMAGE() : COMPARABLE_ID(NULL)
+	{
+	}
+
+	LOADED_IMAGE(
+		__in const void* addr
+		) : COMPARABLE_ID(addr), 
+			Is64(false)
+	{
+	}
 
 	LOADED_IMAGE(
 		__in IMAGE_INFO* imgInfo
-		) : COMPARABLE_ID(imgInfo->ImageBase),
-		ImageSize(imgInfo->ImageSize)
+		) : COMPARABLE_ID(
+				CRange<void>(
+					imgInfo->ImageBase, 
+					reinterpret_cast<void*>((ULONG_PTR)imgInfo->ImageBase + imgInfo->ImageSize)
+					)
+				)
 	{
+		CPE pe(imgInfo->ImageBase);
+		Is64 = pe.Is64Img();
+		EntryPoint = pe.Entrypoint();
 	}
 
 	void* ImageBase()
 	{
-		return Id;
+		return Id.Begin();
+	}
+
+	void* ImageSize()
+	{
+		return Id.End();
 	}
 };
 

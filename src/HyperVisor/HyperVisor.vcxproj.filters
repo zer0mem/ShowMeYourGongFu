@@ -19,7 +19,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="drv_common.h" />
     <ClInclude Include="StdAfx.h" />
     <ClInclude Include="Common\base\HVCommon.h">
       <Filter>src\Common\base</Filter>

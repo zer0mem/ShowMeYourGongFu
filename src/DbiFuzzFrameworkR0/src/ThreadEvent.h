@@ -13,25 +13,40 @@
 #include "Common/Constants.h"
 #include "../../Common/FastCall/FastCall.h"
 
-//my pushaq implementation is in reverse order as intel pushad -> rework in the future
-#ifdef FUZZX64
-#define FLAGS REG_X64_COUNT
-#elif FUZZX86
-#define FLAGS REG_X86_COUNT
-#endif
-
 enum Retf
 {
-	SEGMENT_SEL = FLAGS,
+	FLAGS = 0,
+	SEGMENT_SEL,
 	RETURN,
 	CONTEXT_COUNT
+};
+
+class CRegXTypeRetf :
+	public CRegXType
+{
+public:
+	CRegXTypeRetf(
+		__in bool is64,
+		__in void* regs
+		) : CRegXType(is64, regs) 
+	{
+	}
+
+	ULONG_PTR GetRET() { return GetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + RETURN); }
+	ULONG_PTR GetSEG() { return GetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + SEGMENT_SEL); }
+
+	//switched flags with ret => because of iret : call smth; stmh : push cs, pushf ==> [ret, cs, flags] == reverse order
+	void SetRET(__in ULONG_PTR ret) { SetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + FLAGS, ret); }
+	void SetFLAGS(__in ULONG_PTR flags) { SetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + RETURN, flags); }
+
+	void SetSEG(__in ULONG_PTR seg) { SetReg((m_is64 ? REG_X64_COUNT : REG_X86_COUNT) + SEGMENT_SEL, seg); }
 };
 
 struct EVENT_THREAD_INFO 
 {
 	HANDLE ProcessId;
 	void* EventSemaphor;
-	PLATFORM_REG_TYPE GeneralPurposeContext[REG_COUNT];
+	DBI_OUT_CONTEXT DbiOutContext;
 
 	EVENT_THREAD_INFO(
 		__in HANDLE processId
@@ -40,10 +55,27 @@ struct EVENT_THREAD_INFO
 	}
 
 	void SetContext(
-		__in PLATFORM_REG_TYPE reg[REG_COUNT]
+		__in ULONG_PTR reg[REG_COUNT],
+		__in_bcount(ctxSize) void* generalPurposeContext,
+		__in size_t ctxSize,
+		__in BRANCH_INFO* branchInfo = NULL,
+		__in MEMORY_ACCESS* memInfo = NULL
 		)
 	{
-		*GeneralPurposeContext = *reg;
+		if (ctxSize > sizeof(ULONG_PTR[REG_COUNT]))
+		{
+			KeBreak();
+			return;
+		}
+
+		memcpy(&DbiOutContext.GeneralPurposeContext, generalPurposeContext, ctxSize);
+
+		if (branchInfo)
+			DbiOutContext.BranchInfo = *branchInfo;
+
+		if (memInfo)
+			DbiOutContext.MemoryInfo = *memInfo;
+
 		EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
 	}
 };
@@ -78,12 +110,14 @@ public:
 
 // FUZZ MONITOR HANDLER support routines
 	__checkReturn
-	bool MonitorFastCall(
+		bool MonitorFastCall(
+		__in LOADED_IMAGE* img,
 		__in ULONG_PTR reg[REG_COUNT]
 		);
 
 	__checkReturn
 	bool EventCallback(
+		__in LOADED_IMAGE* img, 
 		__in ULONG_PTR reg[REG_COUNT]
 	);
 

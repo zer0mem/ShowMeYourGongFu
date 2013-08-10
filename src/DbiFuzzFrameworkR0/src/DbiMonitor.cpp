@@ -237,12 +237,14 @@ EXTERN_C void* PageFault(
 		}
 		else
 		{
-			if (FAST_CALL == reg[RAX])
+			if (FAST_CALL == reg[DBI_IOCALL])
 			{
 				KeBreak();
-				if ((ULONG_PTR)PsGetCurrentProcessId() != reg[RSI])
+				if ((ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
 				{
-					if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[RSI], &fuzzed_proc))
+					fuzzed_proc = NULL;
+					(void)(CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc));
+					if (fuzzed_proc)
 					{
 						if (fuzzed_proc->PageFault(reg))
 							return NULL;
@@ -272,7 +274,7 @@ void CDbiMonitor::TrapHandler(
 		{
 			ins_addr -= ins_len;
 
-			if (0xBADF00D0 == (ULONG)reg[RBX] || 0xBADF00D1 == (ULONG)reg[RBX])
+			//if (0xBADF00D0 == (ULONG)reg[RBX] || 0xBADF00D1 == (ULONG)reg[RBX])
 			{
 				//print some info src-dst
 				ULONG_PTR src = 0;
@@ -291,16 +293,16 @@ void CDbiMonitor::TrapHandler(
 				branch_i.DstEip = reinterpret_cast<const void*>(ins_addr);
 				branch_i.SrcEip = reinterpret_cast<const void*>(src);
 				CDbiMonitor::GetInstance().GetBranchStack().Push(branch_i);
-
+				
 				CDbiMonitor::GetInstance().PrintfStack.Push(0xBADF00D0);
 				CDbiMonitor::GetInstance().PrintfStack.Push(src);
 				CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-/*
+				
 				//set-up next BTF hook
 				ULONG_PTR rflags = 0;
 				if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
 					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-*/
+
 				vmwrite(VMX_VMCS64_GUEST_RIP, FAST_CALL);
 /*
 				//BTF - trace marker
@@ -408,7 +410,7 @@ void CDbiMonitor::CPUIDCALLBACK(
 		{
 			reg[RBX] = 0xBADF00D0;
 
-			CDbiMonitor::GetInstance().PrintfStack.Push(0xDEADCAFE);
+			//CDbiMonitor::GetInstance().PrintfStack.Push(0xDEADCAFE);
 
 			ULONG_PTR rflags = 0;
 			vmread(VMX_VMCS_GUEST_RFLAGS, &rflags);

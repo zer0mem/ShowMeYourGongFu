@@ -67,7 +67,7 @@ private:
 };
 
 
-#define SIZE_REL_CALL (2 * (sizeof(ULONG) + sizeof(BYTE)))
+#define SIZE_REL_CALL ((sizeof(ULONG) + sizeof(BYTE)))
 
 struct RELCALLHOOK
 {
@@ -77,10 +77,9 @@ struct RELCALLHOOK
 		__in ULONG delta
 		)
 	{
-		/*
 		Buffer[0] = 0xE8;
 		*reinterpret_cast<ULONG*>(Buffer + 1) = delta;
-		*/
+		/*
 		Buffer[0] = 0xCC;
 		Buffer[1] = 0xEB;
 		Buffer[2] = 0xFE;
@@ -89,6 +88,7 @@ struct RELCALLHOOK
 		
 		Buffer[5] = 0xE8;
 		*reinterpret_cast<ULONG*>(Buffer + 5 + 1) = delta;
+		*/
 		
 	}
 private:

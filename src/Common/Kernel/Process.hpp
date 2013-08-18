@@ -41,7 +41,7 @@ public:
 		__in PEPROCESS process
 	)
 	{
-		if (PsGetCurrentProcess() != process)
+		if (process && PsGetCurrentProcess() != process)
 		{
 			m_attached = true;
 			KeStackAttachProcess((PRKPROCESS)process, &m_apcState);

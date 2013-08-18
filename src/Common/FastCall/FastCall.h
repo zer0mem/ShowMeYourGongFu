@@ -12,9 +12,11 @@ enum
 {
 	FAST_CALL = 0x666,
 	SYSCALL_TRACE_FLAG = 0x200,
-	SYSCALL_INFO_FLAG,
 	SYSCALL_HOOK,
 	SYSCALL_PATCH_MEMORY,
+	SYSCALL_DUMP_MEMORY,
+	SYSCALL_GET_CONTEXT,
+	SYSCALL_SET_CONTEXT,
 	SYSCALL_TRACE_RET,
 	SYSCALL_ENUM_NEXT,
 };
@@ -23,6 +25,7 @@ enum
 {
 	DBI_IOCALL = RBP,
 	DBI_FUZZAPP_PROC_ID = RCX,
+	DBI_IRET = RCX,
 	DBI_FUZZAPP_THREAD_ID = RSI,
 	DBI_RETURN = RSI,
 	DBI_ACTION = RAX,
@@ -33,13 +36,15 @@ enum
 
 #define DBI_FLAGS REG_COUNT
 
+#define SIZEOF_DBI_FASTCALL 3 //mov eax, [ebp]
+
 #pragma pack(push, 1)
 
 struct BRANCH_INFO 
 {
 	const void* DstEip;
 	const void* SrcEip;
-	ULONG_PTR Flags;
+	ULONG64 Flags;
 };
 
 struct MEMORY_ACCESS
@@ -50,15 +55,23 @@ struct MEMORY_ACCESS
 
 struct DBI_OUT_CONTEXT
 {
-	ULONG_PTR GeneralPurposeContext[REG_COUNT + 1];
+	ULONG64 GeneralPurposeContext[REG_COUNT + 1];
 	BRANCH_INFO LastBranchInfo;
 	MEMORY_ACCESS MemoryInfo;
 };
 
 struct CID_ENUM
 {
-	HANDLE ProcId;
-	HANDLE ThreadId;
+	union
+	{
+		ULONG64 uProcId;
+		HANDLE ProcId;
+	};
+	union
+	{
+		ULONG64 uThreadId;
+		HANDLE ThreadId;
+	};
 };
 
 #pragma pack(pop)

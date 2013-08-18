@@ -17,6 +17,7 @@
 EXTERN_C void sysenter();
 EXTERN_C void rdmsr_hook();
 EXTERN_C void pagafault_hook();
+EXTERN_C void patchguard_hook();
 
 
 CDbiMonitor CDbiMonitor::m_instance;
@@ -87,6 +88,7 @@ bool CDbiMonitor::SetVirtualizationCallbacks()
 
 	m_traps[VMX_EXIT_RDMSR] = (ULONG_PTR)HookProtectionMSR;
 	m_traps[VMX_EXIT_EXCEPTION] = (ULONG_PTR)TrapHandler;
+	m_traps[VMX_EXIT_DRX_MOVE] = (ULONG_PTR)AntiPatchGuard;
 	
 	//m_traps[VMX_EXIT_EPT_VIOLATION] = (ULONG_PTR)PageFaultHandler;
 
@@ -233,6 +235,7 @@ EXTERN_C void* PageFault(
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 		{
+			DbgPrint("\nPageFault in monitored process %p\n", fault_addr);
 			if (fuzzed_proc->PageFault(fault_addr, reg))
 				return NULL;
 		}
@@ -240,7 +243,6 @@ EXTERN_C void* PageFault(
 		{
 			if (FAST_CALL == reg[DBI_IOCALL])
 			{
-				KeBreak();
 				if ((ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
 				{
 					fuzzed_proc = NULL;
@@ -250,7 +252,6 @@ EXTERN_C void* PageFault(
 						if (fuzzed_proc->PageFault(fault_addr, reg))
 							return NULL;
 					}
-					return NULL;//enum procid - threadid; but nothing monitored yet ...
 				}
 			}
 		}
@@ -311,6 +312,22 @@ void CDbiMonitor::TrapHandler(
 						//disable trap flag and let handle it by PageFault Hndlr
 						vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 					}
+					else
+					{
+						CDbiMonitor::GetInstance().PrintfStack.Push(0xBADF00D0);
+						CDbiMonitor::GetInstance().PrintfStack.Push(src);
+						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
+						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
+						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
+					}
+				}
+				else
+				{
+					CDbiMonitor::GetInstance().PrintfStack.Push(0xDEADCAFE);
+					CDbiMonitor::GetInstance().PrintfStack.Push(src);
+					CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
+					CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
+					CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
 				}
 			}
 
@@ -398,4 +415,25 @@ void CDbiMonitor::CPUIDCALLBACK(
 			vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags | TRAP));
 		}
 	}
+}
+
+EXTERN_C void* PatchGuardHook( 
+	__inout ULONG_PTR reg[REG_COUNT]
+	)
+{
+	DbgPrint("\n >>>>>> PatchGuardHook %p\n\n", reg);
+	KeBreak();
+	return NULL;
+}
+
+void CDbiMonitor::AntiPatchGuard( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+)
+{
+	/*
+	ULONG_PTR ins_len;
+	vmread(VMX_VMCS32_RO_EXIT_INSTR_LENGTH, &ins_len);
+	vmread(VMX_VMCS64_GUEST_RIP, &reg[RCX]);//original 'ret'-addr
+	*/
+	vmwrite(VMX_VMCS64_GUEST_RIP, patchguard_hook);//trampoline to 	PatchGuardHook
 }

@@ -25,7 +25,8 @@ struct EVENT_THREAD_INFO
 
 	EVENT_THREAD_INFO(
 		__in HANDLE processId
-		) : ProcessId(processId)
+		) : ProcessId(processId),
+			EventSemaphor(NULL)
 	{
 	}
 
@@ -54,17 +55,44 @@ struct EVENT_THREAD_INFO
 
 			if (memInfo)
 				DbiOutContext.MemoryInfo = *memInfo;
+			
+			ProcessId = PsGetCurrentProcessId();
 
 			EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
 			return true;
 		}
+
 		return false;
+	}
+
+	void DumpContext(
+		__in bool is64,
+		__in ULONG_PTR reg[REG_COUNT]
+		)
+	{
+		CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_INFO_OUT]), sizeof(DBI_OUT_CONTEXT));
+		DBI_OUT_CONTEXT* r_context = reinterpret_cast<DBI_OUT_CONTEXT*>(r_auto_context.Map());
+		if (r_context)
+		{
+			for (size_t i = 0; i < REG_COUNT + 1; i++)
+				r_context->GeneralPurposeContext[i] = DbiOutContext.GeneralPurposeContext[i];
+
+			r_context->LastBranchInfo = DbiOutContext.LastBranchInfo;
+			r_context->MemoryInfo = DbiOutContext.MemoryInfo;
+		}
 	}
 };
 
 class CThreadEvent :
 	public THREAD_INFO
 {
+	enum EnumIRET
+	{
+		IReturn = 0,
+		ICodeSegment,
+		IFlags,
+		IRetCount
+	};
 public:
 	MEMORY_INFO LastMemoryInfo;
 	ULONG_PTR GeneralPurposeContext[REG_COUNT];
@@ -92,8 +120,8 @@ public:
 
 // FUZZ MONITOR HANDLER support routines
 	__checkReturn
-		bool MonitorFastCall(
-		__in LOADED_IMAGE* img,
+	bool MonitorFastCall(
+		__in CImage* img,
 		__in ULONG_PTR reg[REG_COUNT]
 		);
 
@@ -104,11 +132,37 @@ public:
 		__in CLockedAVL<CIMAGEINFO_ID>& imgs
 	);
 
+	__checkReturn
+	bool IsTrapSet();
+
 protected:
 	__checkReturn 
 	bool FlipSemaphore(
 		__in const EVENT_THREAD_INFO& eventThreadInfo
 		);
+
+	void SetIret(
+		__in bool is64,
+		__inout void* iretAddr,
+		__in const void* iret,
+		__in ULONG_PTR segSel,
+		__in ULONG_PTR flags
+		);
+
+private:
+	template<class TYPE>
+	__forceinline
+		void SetIret(
+		__inout TYPE* iret,
+		__in const void* ret,
+		__in ULONG_PTR segSel,
+		__in ULONG_PTR flags
+		)
+	{
+		iret[IReturn] = (TYPE)(ret);
+		iret[ICodeSegment] = (TYPE)(segSel);
+		iret[IFlags] = (TYPE)(flags);
+	}
 
 protected:
 	bool WaitForSyscallCallback;

@@ -182,19 +182,15 @@ struct LOADED_IMAGE :
 		Id.SetSize(imgInfo->ImageSize);
 	}
 
-	void* ImageBase()
+	CRange<void>& Image()
 	{
-		return Id.Begin();
+		return Id;
 	}
 
-	void* ImageLimit()
-	{
-		return Id.End();
-	}
-
+	__forceinline
 	size_t ImageSize()
 	{
-		return ((size_t)ImageLimit() - (size_t)ImageBase() + 1);
+		return ((size_t)Id.End() - (size_t)Id.Begin() + 1);
 	}
 };
 

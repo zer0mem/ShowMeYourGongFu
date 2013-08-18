@@ -21,6 +21,14 @@ EXTERN_C void syscall_instr_epilogue();
 
 EXTERN_C ULONG_PTR* get_ring3_rsp();
 
+class CIret
+{
+public:
+
+
+protected:
+};
+
 CThreadEvent::CThreadEvent() : 
 	THREAD_INFO(PsGetCurrentThreadId(), NULL),
 	m_currentThreadInfo(NULL),
@@ -75,24 +83,34 @@ void CThreadEvent::EpilogueProceeded()
 //invoked from monitor
 __checkReturn
 bool CThreadEvent::MonitorFastCall( 
-	__in LOADED_IMAGE* img,
+	__in CImage* img,
 	__in ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	KeBreak();
+	IRET* iret = PPAGE_FAULT_IRET(reg);
 	DbgPrint("\nMonitorFastCall\n");
-	switch(reg[RCX])
+	switch(reg[DBI_ACTION])
 	{
 	case SYSCALL_TRACE_FLAG:
-		break;
-	case SYSCALL_INFO_FLAG:
-		break;
+		{
+			m_monitorThreadInfo.ProcessId = PsGetCurrentProcessId();
+			m_monitorThreadInfo.EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
+
+			m_currentThreadInfo.DumpContext(img->Is64(), reg);
+
+			iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+
+			return FlipSemaphore(m_currentThreadInfo);
+		}
+	case SYSCALL_PATCH_MEMORY:
+	case SYSCALL_DUMP_MEMORY:
+	case SYSCALL_GET_CONTEXT:
+	case SYSCALL_SET_CONTEXT:
 	default:
 		return false;
 	}
 
-	//m_monitorThreadInfo.SetContext(reg);
-	return FlipSemaphore(m_currentThreadInfo);
+	return true;
 }
 
 #include "DbiMonitor.h"
@@ -105,7 +123,7 @@ bool CThreadEvent::EventCallback(
 	)
 {
 	IRET* iret = PPAGE_FAULT_IRET(reg);
-	DbgPrint("\n >>> @CallbackEvent!! %p %p [& %p]\n", reg[DBI_IOCALL], reg[DBI_ACTION], iret->Return);
+	DbgPrint("\n >>> @CallbackEvent!! %p %p [& %p]\n", reg[DBI_ACTION], reg[DBI_R3TELEPORT], iret->Return);
 
 	switch(reg[DBI_ACTION])
 	{
@@ -123,24 +141,30 @@ bool CThreadEvent::EventCallback(
 			{
 				iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 
+				SetIret(img->Is64(), reinterpret_cast<void*>(reg[DBI_IRET]), ret, iret->CodeSegment, m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS] | TRAP);
+
 				DbgPrint("\n 1. EventCallback <SYSCALL_MAIN> : [%ws -> %p] <- %p [%p] %x\n", img->ImageName().Buffer, ret, reg[DBI_R3TELEPORT], reg, m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS]);
-				break;
+				return true;
 			}
 			DbgPrint("\nEROOR\n");
 			KeBreak();
 		}
-		return false;
 
 	case SYSCALL_TRACE_FLAG:
 		{
 			BRANCH_INFO branch = CDbiMonitor::GetInstance().GetBranchStack().Pop();
-			if (!CDbiMonitor::GetInstance().GetBranchStack().IsEmpty())
+			while (!CDbiMonitor::GetInstance().GetBranchStack().IsEmpty())
+			{
 				KeBreak();
+				branch = CDbiMonitor::GetInstance().GetBranchStack().Pop();
+			}
 
 			if (m_currentThreadInfo.SetContext(img->Is64(), reg, &branch))
 			{
 				m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = branch.Flags;
 				iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+
+				SetIret(img->Is64(), reinterpret_cast<void*>(reg[DBI_IRET]), branch.DstEip, iret->CodeSegment, branch.Flags | TRAP);
 
 				//temporary dbg info
 				CIMAGEINFO_ID* img_id;
@@ -152,19 +176,32 @@ bool CThreadEvent::EventCallback(
 				src_img = img_id->Value;
 
 
-				DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG : %p)> : >> %p [%ws] %p [%ws] [-> %p] %p | dbg -> %ws\n", 
+				DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG : %p)> : >> %p [%ws] %p [%ws] | dbg -> %ws\nreg[ecx] : %p ; reg[eax] : %p //%p\n", 
 					branch.Flags,
 					branch.SrcEip, src_img->ImageName().Buffer, 
 					branch.DstEip, dst_img->ImageName().Buffer, 
-					reg[DBI_R3TELEPORT], reg, img->ImageName().Buffer);
+					img->ImageName().Buffer, 
+					m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[RCX],
+					m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[RAX],
+					reg[DBI_R3TELEPORT]);
 
+				if (0x84FF == (WORD)m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[RAX] &&
+					0 == m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[RCX] &&
+					0x346 == branch.Flags &&
+					img->Image().Begin() == src_img->Image().Begin())
+				{
+					KeBreak();
+				}
 
-				break;
+				if (!FlipSemaphore(m_monitorThreadInfo))
+				{
+					KeBreak();
+				}
+				return true;
 			}
 			DbgPrint("\nEROOR\n");
 			KeBreak();
 		}
-		return false;
 
 	case SYSCALL_TRACE_RET:
 		{
@@ -185,18 +222,15 @@ bool CThreadEvent::EventCallback(
 				reg[DBI_ACTION],
 				reg[RCX],
 				reg[RAX]);
-			break;
+
+			return true;
 		}
-	case SYSCALL_PATCH_MEMORY:
 	default:
 		DbgPrint("\n >>> @CallbackEvent!! UNSUPPORTED");
-		return false;
+		break;
 	}
 
-	return true;
-
-	//m_currentThreadInfo.SetContext(reg);
-	return FlipSemaphore(m_monitorThreadInfo);
+	return false;
 }
 
 __checkReturn 
@@ -204,16 +238,46 @@ bool CThreadEvent::FlipSemaphore(
 	__in const EVENT_THREAD_INFO& eventThreadInfo
 	)
 {
-	CEProcess eprocess(eventThreadInfo.ProcessId);
-	CAutoProcessAttach process(eprocess.GetEProcess());
-	if (process.IsAttached())
+	if (eventThreadInfo.EventSemaphor)
 	{
-		CMdl event_semaphor(eventThreadInfo.EventSemaphor, sizeof(BYTE));
-		volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.Map());
-		if (semaphor)
+		CEProcess eprocess(eventThreadInfo.ProcessId);
+		CAutoProcessAttach process(eprocess.GetEProcess());
+		if (process.IsAttached())
 		{
-			return (0 == InterlockedExchange8(semaphor, 1));
+			CMdl event_semaphor(eventThreadInfo.EventSemaphor, sizeof(BYTE));
+			volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.Map());
+			if (semaphor)
+			{
+				return (0 == InterlockedExchange8(semaphor, 1));
+			}
 		}
 	}
 	return false;
+}
+
+void CThreadEvent::SetIret( 
+	__in bool is64, 
+	__inout void* iretAddr, 
+	__in const void* iret, 
+	__in ULONG_PTR segSel, 
+	__in ULONG_PTR flags 
+	)
+{
+	size_t iret_size = IRetCount * (is64 ? sizeof(ULONG_PTR) : sizeof(ULONG));
+	CMdl r_auto_context(reinterpret_cast<const void*>(iretAddr), iret_size);
+	void* iret_ctx = r_auto_context.Map();
+	if (iret_ctx)
+	{
+		if (is64)
+			SetIret<ULONG_PTR>(reinterpret_cast<ULONG_PTR*>(iret_ctx), iret, segSel, flags);
+		else
+			SetIret<ULONG>(reinterpret_cast<ULONG*>(iret_ctx), iret, segSel, flags);
+	}
+}
+
+__checkReturn
+	bool CThreadEvent::IsTrapSet()
+{
+	return (m_currentThreadInfo.EventSemaphor && //is initialized ?
+			!!(m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS] & TRAP));
 }

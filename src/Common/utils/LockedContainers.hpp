@@ -57,6 +57,16 @@ public:
 	}
 
 	__checkReturn
+	bool GetNext(
+		__in const TYPE& element,
+		__inout TYPE** out
+		)
+	{
+		SPIN_LOCK
+		return m_avl.GetNext(&element, out);
+	}
+
+	__checkReturn
 	size_t GetSize()
 	{
 		SPIN_LOCK

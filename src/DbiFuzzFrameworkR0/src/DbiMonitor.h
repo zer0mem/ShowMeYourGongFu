@@ -48,10 +48,6 @@ public:
 	
 	CStack<ULONG_PTR> PrintfStack;
 
-/*
-	static
-	CDbiMonitor& GetInstance();
-*/
 protected:
 	static
 	void HookProtectionMSR(
@@ -79,6 +75,12 @@ protected:
 		__in const void* hook
 		);
 
+
+	static
+	void AntiPatchGuard(
+		__inout ULONG_PTR reg[REG_COUNT] 
+	);
+	
 	CStack<BRANCH_INFO> m_branchStack;
 	CProcessMonitor<CProcess2Fuzz> m_procMonitor;
 

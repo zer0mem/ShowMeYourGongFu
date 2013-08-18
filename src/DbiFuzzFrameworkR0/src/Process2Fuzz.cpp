@@ -14,6 +14,8 @@
 #include "../../Common/utils/PE.hpp"
 #include "../../Common/FastCall/FastCall.h"
 
+#include "../HyperVisor/Common/base/HVCommon.h"
+
 CProcess2Fuzz::CProcess2Fuzz( 
 	__inout PEPROCESS process, 
 	__in HANDLE processId, 
@@ -86,35 +88,40 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 
 	if (!imageInfo->SystemModeImage)
 	{
-		CRange<void> img_r(imageInfo->ImageBase);
-		img_r.SetSize(imageInfo->ImageSize);
-		CIMAGEINFO_ID img_id(img_r, new CImage(fullImageName, imageInfo));
-		if (m_loadedImgs.Push(img_id))
+		CImage* img = new CImage(fullImageName, imageInfo);
+		if (img)
 		{
-			CImage* img = img_id.Value;
-			img_id.Value = NULL;
-			if (!m_mainImg)
-				m_mainImg = img;
+			CIMAGEINFO_ID img_id(img->Image(), img);
 
-			if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img->ImageName())))
+			//drop overlapped images; handle unhook in ~coldpatch -> now it is unloaded img, unhooking == badidea
+			while (m_loadedImgs.Pop(img_id));
+
+			if (m_loadedImgs.Push(img_id))
 			{
-				KeBreak();
-				CPE pe(imageInfo->ImageBase);
-				const void* func_name;
-				for (size_t i = 0;
-					(func_name = CConstants::InAppExtRoutines(i));
-					i++)
-				{
-					m_extRoutines[i] = pe.GetProcAddress(func_name);
-				}
-			}		
-		}
-		else
-		{
-			if (!m_mainImg)
-				m_internalError = true;
-		}
+				img_id.Value = NULL;
+				if (!m_mainImg)
+					m_mainImg = img;
 
+				if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img->ImageName())))
+				{
+					KeBreak();
+					CPE pe(imageInfo->ImageBase);
+					const void* func_name;
+					for (size_t i = 0;
+						(func_name = CConstants::InAppExtRoutines(i));
+						i++)
+					{
+						m_extRoutines[i] = pe.GetProcAddress(func_name);
+					}
+				}
+			}
+			else
+			{
+				if (!m_mainImg)
+					m_internalError = true;
+			}
+		}
+		
 		DbgPrint("\n @ImageNotifyRoutine %x %p [%p %p]\n", processId, PsGetCurrentProcess(), imageInfo->ImageBase, imageInfo->ImageSize);
 	}
 	else
@@ -241,38 +248,75 @@ void CProcess2Fuzz::SetUnwriteable(
 	}
 }
 
+#include "DbiMonitor.h"
+
 __checkReturn
 bool CProcess2Fuzz::PageFault( 
 	__in BYTE* faultAddr, 
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->ImageBase() + m_mainImg->EntryPoint());
-	if (m_mainImg && !m_installed && m_extRoutines[ExtMain])
-	{
-		if (m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtMain]))
-		{
-			DbgPrint("\n%s\n", m_mainImg->IsHooked(ep_hook) ? "EVERYTHINK OK" : "MEGA WTF");
-			KeBreak();
-		}
-		m_installed = m_mainImg->IsHooked(ep_hook);
-	}
-	
+	void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
+	if (!m_installed && m_mainImg && m_extRoutines[ExtMain])
+		m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtMain]);
 	
 	if ((ULONG_PTR)faultAddr == FAST_CALL)
-		return R3CommPipe(faultAddr, reg);
-
-	if (m_nonWritePages.Find(CMemoryRange(faultAddr, sizeof(BYTE))))
 	{
-		KeBreak();
-		m_nonWritePages.Pop(CMemoryRange(faultAddr, sizeof(BYTE)));
-		if (!CMMU::IsWriteable(faultAddr))
-		{
-			CMMU::SetWriteable(faultAddr, sizeof(ULONG_PTR));
-			//+set trap after instruction + clear BTF, to set unwriteable!
+		return R3CommPipe(faultAddr, reg);
+	}
+#if 0
+	else//if TRAP is set fot PsGetCurrentThread() ... 
+	{
+		
+	/*
+	 * 8 Trap Flag 
+	   (1) A single-step interrupt will occur after every instruction.
+	   (0) Normal instruction execution  
 
-			//sync problem, not locked and acces via ref, via ref counting ...
-			return true;
+	   !!!
+	   ** Note: Trap Flag is always cleared when an 
+	   interrupt is generated either by software or 
+	   hardware.
+	   !!!
+	*/
+
+		CThreadEvent* fuzz_thread;
+		if (m_threads.Find(CThreadEvent(PsGetCurrentThreadId()), &fuzz_thread))
+		{
+			if (CDbiMonitor::GetInstance().GetBranchStack().IsEmpty() && fuzz_thread->IsTrapSet())
+			{
+				DbgPrint("\npagefault at : %p\n", faultAddr);
+				KeBreak();
+				IRET* iret = PPAGE_FAULT_IRET(reg);
+				//iret->Flags |= TRAP;
+
+				BRANCH_INFO branch_i;
+				branch_i.DstEip = iret->Return;
+				branch_i.SrcEip = iret->Return;
+				branch_i.Flags = iret->Flags;
+				CDbiMonitor::GetInstance().GetBranchStack().Push(branch_i);
+
+				iret->Return = reinterpret_cast<const void*>(FAST_CALL);
+				return false;
+			}
+		}
+	}
+#endif
+
+	if (PsGetCurrentProcessId() == m_processId)
+	{
+		if (m_nonWritePages.Find(CMemoryRange(faultAddr, sizeof(BYTE))))
+		{
+			KeBreak();
+			m_nonWritePages.Pop(CMemoryRange(faultAddr, sizeof(BYTE)));
+			if (!CMMU::IsWriteable(faultAddr))
+			{
+				CMMU::SetWriteable(faultAddr, sizeof(ULONG_PTR));
+				//+set trap after instruction + clear BTF, to set unwriteable!
+
+				//sync problem, not locked and acces via ref, via ref counting ...
+				return true;
+			}
 		}
 	}
 
@@ -285,7 +329,6 @@ bool CProcess2Fuzz::R3CommPipe(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	DbgPrint("\nR3CommPipe");
 	IRET* iret = PPAGE_FAULT_IRET(reg);
 
 	if (FAST_CALL == (ULONG_PTR)iret->Return)
@@ -293,6 +336,12 @@ bool CProcess2Fuzz::R3CommPipe(
 		DbgPrint("\nHV FastIOCall - callback");
 		//handle branch tracing - callback from HV
 		iret->Return = m_extRoutines[ExtTrapTrace];
+		if (iret->Flags & TRAP)
+		{
+			DbgPrint("\nbad mistake %p %x\n", &iret->Flags, iret->Flags);
+			KeBreak();
+		}
+		iret->Flags &= (~TRAP);
 		return true;
 	}
 
@@ -300,10 +349,8 @@ bool CProcess2Fuzz::R3CommPipe(
 	{
 		DbgPrint("\n reg[DBI_RETURN] %p ", reg[DBI_RETURN]);
 		CIMAGEINFO_ID* img_id;
-		if (m_loadedImgs.Find(CIMAGEINFO_ID(CRange<void>(reinterpret_cast<void*>(reg[DBI_RETURN]))), &img_id) ||
-			m_loadedImgs.Find(CIMAGEINFO_ID(CRange<void>(iret->Return)), &img_id))
+		if (m_loadedImgs.Find(CIMAGEINFO_ID(CRange<void>(iret->Return)), &img_id))
 		{
-			DbgPrint("\n m_loadedImgs.Find ok ");
 			CImage* img = img_id->Value;
 			CThreadEvent* fuzz_thread;
 			if (PsGetCurrentProcessId() == m_processId)
@@ -313,11 +360,11 @@ bool CProcess2Fuzz::R3CommPipe(
 					return fuzz_thread->EventCallback(img, reg, m_loadedImgs);
 
 				//not suposed to get here
+				DbgPrint("\nUnresolved EventCallback .. wtf\n");
 				KeBreak();
 			}
 			else
 			{
-				KeBreak();
 				if (SYSCALL_ENUM_NEXT == reg[DBI_ACTION])
 				{
 					CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_INFO_OUT]), sizeof(CID_ENUM));
@@ -325,14 +372,20 @@ bool CProcess2Fuzz::R3CommPipe(
 					if (cid)
 					{
 						fuzz_thread = NULL;
-						(void)m_threads.Find(CThreadEvent((HANDLE)((ULONG_PTR)cid->ThreadId + 1)), &fuzz_thread);
+
+						if (!cid->ThreadId)
+							(void)m_threads.Find(CThreadEvent(NULL), &fuzz_thread);
+						else
+							(void)m_threads.GetNext(CThreadEvent((HANDLE)((ULONG_PTR)cid->ThreadId)), &fuzz_thread);
 
 						if (fuzz_thread)
 						{
 							cid->ProcId = m_processId;
 							cid->ThreadId = fuzz_thread->ThreadId();
-							return true;
 						}
+
+						iret->Return = reinterpret_cast<const void*>((ULONG_PTR)iret->Return + SIZEOF_DBI_FASTCALL);
+						return true;
 					}
 				}
 				else
@@ -341,14 +394,16 @@ bool CProcess2Fuzz::R3CommPipe(
 					(void)m_threads.Find(CThreadEvent((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], NULL), &fuzz_thread);
 					if (fuzz_thread)
 					{
-						KeBreak();
 						return fuzz_thread->MonitorFastCall(img, reg);
 					}
 				}
 			}
 		}
 		else
-		DbgPrint("\n m_loadedImgs.Find fail ");
+		{
+			DbgPrint("\n m_loadedImgs.Find fail ");
+			KeBreak();
+		}
 	}
 
 	return false;

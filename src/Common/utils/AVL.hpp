@@ -96,6 +96,28 @@ public:
 		}
 		return false;
 	}
+	
+	__checkReturn
+	bool GetNext(
+		__in const TYPE* key,
+		__inout TYPE** val
+		)
+	{
+		if (!GetSize())
+			return false;
+
+		AVL_NODE<TYPE>* found_or_parent;
+		if (CBinTreeWalker::Find(CONTAINING_RECORD(key, AVL_NODE<TYPE>, Value), &found_or_parent))
+		{
+			if (CBinTreeWalker::GetNext((const AVL_NODE<TYPE>**)&found_or_parent))
+			{
+				//shared ptr ...
+				*val = &found_or_parent->Value;
+				return true;
+			}
+		}
+		return false;
+	}
 
 	__forceinline
 	__checkReturn
@@ -105,14 +127,12 @@ public:
 		)
 	{
 		if (!GetSize())
-		{
-			*val = NULL;
 			return false;
-		}
-
+		
 		AVL_NODE<TYPE>* found;
-		bool contains = CBinTreeWalker::Find(&AVL_NODE<TYPE>(key), &found);
+		bool contains = CBinTreeWalker::Find(CONTAINING_RECORD(key, AVL_NODE<TYPE>, Value), &found);
 
+		//shared ptr ...
 		*val = &(found->Value);
 
 		return contains;
@@ -128,7 +148,7 @@ public:
 			return false;
 
 		AVL_NODE<TYPE>* found;
-		return CBinTreeWalker::Find(&AVL_NODE<TYPE>(key), &found);
+		return CBinTreeWalker::Find(CONTAINING_RECORD(key, AVL_NODE<TYPE>, Value), &found);
 	}
 
 protected:

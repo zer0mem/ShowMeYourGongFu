@@ -1,6 +1,7 @@
 extrn SysCallCallback:proc
 extrn RdmsrHook:proc
 extrn PageFault:proc
+extern PatchGuardHook:proc
 
 include ..\Common\amd64\common.inc
 
@@ -41,6 +42,13 @@ rdmsr_hook proc
 	ENTER_HOOK_EPILOGUE
 	ret
 rdmsr_hook endp
+
+patchguard_hook proc
+	ENTER_HOOK_PROLOGUE
+	ENTER_HOOK PatchGuardHook
+	ENTER_HOOK_EPILOGUE
+	ret
+patchguard_hook endp
 
 pagafault_hook proc
 ;previous mode kernel mode ??

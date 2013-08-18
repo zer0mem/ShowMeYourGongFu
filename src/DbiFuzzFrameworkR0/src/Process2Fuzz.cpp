@@ -32,6 +32,11 @@ CProcess2Fuzz::~CProcess2Fuzz()
 {
 }
 
+
+//---------------------------------------------------------------------
+// ****************** DBI PROC ENVIROMENT WATCH DOGS ******************
+//---------------------------------------------------------------------
+
 __checkReturn
 bool CProcess2Fuzz::WatchProcess( 
 	__inout PEPROCESS eprocess, 
@@ -172,6 +177,11 @@ void CProcess2Fuzz::RemoteThreadNotifyRoutine(
 	DbgPrint("\n REMOTE!ThreadNotifyRoutine %x %p %s\n", parentProcessId, PsGetCurrentProcess(), !!create ? "start" : "exit");
 }
 
+
+//--------------------------------------------------------------
+// ****************** DBI MEMORY MNGMNT UTILS ******************
+//--------------------------------------------------------------
+
 __checkReturn
 bool CProcess2Fuzz::VirtualMemoryCallback(
 	__in void* memory,
@@ -181,6 +191,7 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 	__inout_opt BYTE* buffer /*= NULL*/
 	)
 {
+/*
 	DbgPrint("\n@VirtualMemoryCallback %p %p [thread : %p]\n", PsGetThreadProcessId(PsGetCurrentThread()), m_processId, PsGetCurrentThread());
 	CThreadEvent* fuzz_thread;
 	if (m_threads.Find(CThreadEvent(), &fuzz_thread))
@@ -189,6 +200,7 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 		DbgPrint("\n >  I. @Prologue %p %p [%p]\n", r3stack, *r3stack, reg[RCX]);
 		fuzz_thread->SetCallbackEpilogue(reg, memory, size, write);
 	}
+*/
 	return false;
 }
 
@@ -197,6 +209,7 @@ bool CProcess2Fuzz::Syscall(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
+/*
 	//implement ref counting ? auto_ptr...
 	//but assumption, if thread is in syscall then it can not exit for now good enough...
 	CThreadEvent* fuzz_thread;
@@ -205,7 +218,7 @@ bool CProcess2Fuzz::Syscall(
 		if (fuzz_thread->WaitForSyscallEpilogue())
 		{				
 			if (fuzz_thread->LastMemoryInfo.Write &&
-				!m_stacks.Find(CRange<ULONG_PTR>(reinterpret_cast<ULONG_PTR*>(fuzz_thread->LastMemoryInfo.Memory))))
+				!m_stacks.Find(reinterpret_cast<ULONG_PTR*>(fuzz_thread->LastMemoryInfo.Memory)))
 			{
 				//SetUnwriteable(fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size);
 			}
@@ -215,7 +228,7 @@ bool CProcess2Fuzz::Syscall(
 			return true;
 		}
 	}
-
+*/
 	return CSYSCALL::Syscall(reg);
 }
 
@@ -248,63 +261,35 @@ void CProcess2Fuzz::SetUnwriteable(
 	}
 }
 
-#include "DbiMonitor.h"
+
+//-----------------------------------------------------------------
+// ****************** DBI TOOL API COMMUNICATION ******************
+//-----------------------------------------------------------------
 
 __checkReturn
 bool CProcess2Fuzz::PageFault( 
 	__in BYTE* faultAddr, 
-	__inout ULONG_PTR reg[REG_COUNT] 
+	__inout ULONG_PTR reg[REG_COUNT],
+	__in_opt const BRANCH_INFO* branchInfo /* = NULL */
 	)
-{
-	void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
-	if (!m_installed && m_mainImg && m_extRoutines[ExtMain])
-		m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtMain]);
-	
-	if ((ULONG_PTR)faultAddr == FAST_CALL)
+{	
+	if (PsGetCurrentProcessId() == m_processId)
 	{
-		return R3CommPipe(faultAddr, reg);
-	}
-#if 0
-	else//if TRAP is set fot PsGetCurrentThread() ... 
-	{
-		
-	/*
-	 * 8 Trap Flag 
-	   (1) A single-step interrupt will occur after every instruction.
-	   (0) Normal instruction execution  
-
-	   !!!
-	   ** Note: Trap Flag is always cleared when an 
-	   interrupt is generated either by software or 
-	   hardware.
-	   !!!
-	*/
-
-		CThreadEvent* fuzz_thread;
-		if (m_threads.Find(CThreadEvent(PsGetCurrentThreadId()), &fuzz_thread))
+		void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
+		if (!m_installed && m_mainImg && m_extRoutines[ExtMain])
 		{
-			if (CDbiMonitor::GetInstance().GetBranchStack().IsEmpty() && fuzz_thread->IsTrapSet())
-			{
-				DbgPrint("\npagefault at : %p\n", faultAddr);
-				KeBreak();
-				IRET* iret = PPAGE_FAULT_IRET(reg);
-				//iret->Flags |= TRAP;
+			m_installed = m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtMain]);
 
-				BRANCH_INFO branch_i;
-				branch_i.DstEip = iret->Return;
-				branch_i.SrcEip = iret->Return;
-				branch_i.Flags = iret->Flags;
-				CDbiMonitor::GetInstance().GetBranchStack().Push(branch_i);
-
-				iret->Return = reinterpret_cast<const void*>(FAST_CALL);
-				return false;
-			}
+			if (m_installed) DbgPrint("\nHook set at : %p\n", ep_hook);
 		}
 	}
-#endif
+
+	if (R3CommPipe(faultAddr, reg, branchInfo))
+		return true;
 
 	if (PsGetCurrentProcessId() == m_processId)
 	{
+
 		if (m_nonWritePages.Find(CMemoryRange(faultAddr, sizeof(BYTE))))
 		{
 			KeBreak();
@@ -326,7 +311,8 @@ bool CProcess2Fuzz::PageFault(
 __checkReturn
 bool CProcess2Fuzz::R3CommPipe( 
 	__in BYTE* faultAddr, 
-	__inout ULONG_PTR reg[REG_COUNT] 
+	__inout ULONG_PTR reg[REG_COUNT],
+	__in const BRANCH_INFO* branchInfo
 	)
 {
 	IRET* iret = PPAGE_FAULT_IRET(reg);
@@ -334,77 +320,123 @@ bool CProcess2Fuzz::R3CommPipe(
 	if (FAST_CALL == (ULONG_PTR)iret->Return)
 	{
 		DbgPrint("\nHV FastIOCall - callback");
-		//handle branch tracing - callback from HV
-		iret->Return = m_extRoutines[ExtTrapTrace];
-		if (iret->Flags & TRAP)
+		KeBreak();
+		return false;
+	}
+
+	//should be encapsulated under if (FAST_CALL == reg[DBI_IOCALL]) + second if, under if (PsGetCurrentProcessId() == m_processId)
+	if (iret->Return == faultAddr)
+	{
+		if (PsGetCurrentProcessId() != m_processId)
 		{
-			DbgPrint("\nbad mistake %p %x\n", &iret->Flags, iret->Flags);
+			DbgPrint("\nstrange page fault\n");
 			KeBreak();
 		}
-		iret->Flags &= (~TRAP);
-		return true;
+
+		if (!branchInfo)
+		{
+			KeBreak();
+			return false;
+		}
+
+		//if (m_stacks.Find(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
+		{
+			if (iret->Return == branchInfo->StackPtr)
+			{
+				DbgPrint("\nSmartTracer! %p == %s\n", iret->Return, m_stacks.Find(reinterpret_cast<const ULONG_PTR*>(iret->Return)) ? "in stacks..." : "not in stack ?!");
+
+				//handle branch tracing - callback from HV
+				iret->Return = m_extRoutines[ExtTrapTrace];
+				return true;
+			}
+		}
 	}
 
 	if (FAST_CALL == reg[DBI_IOCALL])
 	{
-		DbgPrint("\n reg[DBI_RETURN] %p ", reg[DBI_RETURN]);
-		CIMAGEINFO_ID* img_id;
-		if (m_loadedImgs.Find(CIMAGEINFO_ID(CRange<void>(iret->Return)), &img_id))
+		if (m_loadedImgs.Find(CIMAGEINFO_ID(iret->Return)) &&
+			(ULONG_PTR)iret->Return + SIZEOF_DBI_FASTCALL == reg[DBI_R3TELEPORT])
 		{
-			CImage* img = img_id->Value;
-			CThreadEvent* fuzz_thread;
+			DbgPrint("\n reg[DBI_RETURN] %p [%p]", iret->Return, reg[DBI_RETURN]);
+
 			if (PsGetCurrentProcessId() == m_processId)
 			{
-				//invoke callback to monitor
+				CThreadEvent* fuzz_thread;
 				if (m_threads.Find(CThreadEvent(), &fuzz_thread))
-					return fuzz_thread->EventCallback(img, reg, m_loadedImgs);
-
-				//not suposed to get here
-				DbgPrint("\nUnresolved EventCallback .. wtf\n");
-				KeBreak();
+				{
+					switch (reg[DBI_ACTION])
+					{
+					case SYSCALL_HOOK:
+						{
+							CIMAGEINFO_ID* img;
+							if (m_loadedImgs.Find(CIMAGEINFO_ID(reinterpret_cast<void*>(reg[DBI_RETURN])), &img))
+								return fuzz_thread->HookEvent(img->Value, reg);
+						}
+						break;
+					case  SYSCALL_TRACE_FLAG:
+						{
+							CIMAGEINFO_ID* img;
+							if (m_loadedImgs.Find(CIMAGEINFO_ID(iret->Return), &img))
+								return fuzz_thread->SmartTraceEvent(img->Value, reg, *branchInfo, m_loadedImgs);
+						}
+						break;
+					default:
+						DbgPrint("\nuknown DBI ACTION!\n");
+						KeBreak();
+						break;
+					}
+				}
 			}
 			else
 			{
-				if (SYSCALL_ENUM_NEXT == reg[DBI_ACTION])
+				//enum threads ?
+				switch (reg[DBI_ACTION])
 				{
-					CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_INFO_OUT]), sizeof(CID_ENUM));
-					CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.Map());
-					if (cid)
+				case SYSCALL_ENUM_NEXT:
 					{
-						fuzz_thread = NULL;
-
-						if (!cid->ThreadId)
-							(void)m_threads.Find(CThreadEvent(NULL), &fuzz_thread);
-						else
-							(void)m_threads.GetNext(CThreadEvent((HANDLE)((ULONG_PTR)cid->ThreadId)), &fuzz_thread);
-
-						if (fuzz_thread)
+						DbgPrint("SYSCALL_ENUM_NEXT");
+						CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_INFO_OUT]), sizeof(CID_ENUM));
+						CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.Map());
+						if (cid)
 						{
-							cid->ProcId = m_processId;
-							cid->ThreadId = fuzz_thread->ThreadId();
-						}
+							CThreadEvent* fuzz_thread = NULL;
 
-						iret->Return = reinterpret_cast<const void*>((ULONG_PTR)iret->Return + SIZEOF_DBI_FASTCALL);
-						return true;
+							if (!cid->ThreadId)
+								(void)m_threads.Find(CThreadEvent(NULL), &fuzz_thread);
+							else
+								(void)m_threads.GetNext(CThreadEvent((HANDLE)((ULONG_PTR)cid->ThreadId)), &fuzz_thread);
+
+							if (fuzz_thread)
+							{
+								cid->ProcId = m_processId;
+								cid->ThreadId = fuzz_thread->ThreadId();
+							}
+
+							iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+							return true;
+						}
 					}
-				}
-				else
-				{
-					fuzz_thread = NULL;
-					(void)m_threads.Find(CThreadEvent((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], NULL), &fuzz_thread);
-					if (fuzz_thread)
+					break;
+				case SYSCALL_TRACE_FLAG:
 					{
-						return fuzz_thread->MonitorFastCall(img, reg);
+						CThreadEvent* fuzz_thread;
+						if (m_threads.Find(CThreadEvent((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], NULL), &fuzz_thread))
+							return fuzz_thread->SmartTrace(reg);
 					}
+					break;
+				default:
+					break;
 				}
+				DbgPrint("\nunresolved MONITOR event\n");
+				KeBreak();
 			}
 		}
 		else
 		{
-			DbgPrint("\n m_loadedImgs.Find fail ");
+			DbgPrint("\nstrange IRET %p -> %p\n", iret->Return, reg[DBI_R3TELEPORT]);
 			KeBreak();
 		}
-	}
+	}		
 
 	return false;
 }

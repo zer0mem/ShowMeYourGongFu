@@ -23,7 +23,7 @@ __drv_maxIRQL(DISPATCH_LEVEL)
 __bcount_opt(size)
 void* __cdecl malloc(__in size_t size)
 {
-	MEMBLOCK *pBlock = (MEMBLOCK*)ExAllocatePoolWithTag(NonPagedPool, size + sizeof(MEMBLOCK), _LIBC_POOL_TAG);
+	MEMBLOCK *pBlock = (MEMBLOCK*)ExAllocatePoolWithTag(NonPagedPoolCacheAlignedMustS, size + sizeof(MEMBLOCK), _LIBC_POOL_TAG);
 	if (NULL == pBlock)
 		return NULL;
 
@@ -50,7 +50,7 @@ void* __cdecl realloc(__in_opt void *ptr, __in size_t size)
 	}
 
 	// alloc new block
-	MEMBLOCK *outblock = (MEMBLOCK*)ExAllocatePoolWithTag(NonPagedPool, size + sizeof(MEMBLOCK), _LIBC_POOL_TAG);
+	MEMBLOCK *outblock = (MEMBLOCK*)ExAllocatePoolWithTag(NonPagedPoolCacheAlignedMustS, size + sizeof(MEMBLOCK), _LIBC_POOL_TAG);
 	if (NULL == outblock)
 		return NULL;
 

@@ -124,6 +124,7 @@ struct THREAD_INFO :
 		ULONG_PTR begin;
 		ULONG_PTR end;
 		IoGetStackLimits(&begin, &end);
+		DbgPrint("\nstack boundaries : %p %p [%p]\n", begin, end, StackBase);
 		Stack.Set((ULONG_PTR*)begin, (ULONG_PTR*)end);
 	}
 

@@ -17,6 +17,8 @@
 
 #include "../Common/Stack.hpp"
 
+#include "../../Common/base/AutoMalloc.h"
+
 class CDbiMonitor : 
 	public CCRonos,
 	public CSingleton<CDbiMonitor>
@@ -36,6 +38,13 @@ public:
 	void* GetPFHandler(
 		__in BYTE coreId
 		);
+
+	BRANCH_INFO* BranchInfoUnsafe(
+		__in size_t ind
+		)
+	{
+		return &m_branchInfo[ind];
+	}
 
 	CStack<BRANCH_INFO>& GetBranchStack();
 
@@ -82,6 +91,7 @@ protected:
 	);
 	
 	CStack<BRANCH_INFO> m_branchStack;
+	CAutoTypeMalloc<BRANCH_INFO> m_branchInfo;
 	CProcessMonitor<CProcess2Fuzz> m_procMonitor;
 
 protected:

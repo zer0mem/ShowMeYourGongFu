@@ -160,6 +160,9 @@
     <ClInclude Include="src\ImageInfo.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\Common\base\AutoMalloc.h">
+      <Filter>Common\base</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="driver_template.rc" />

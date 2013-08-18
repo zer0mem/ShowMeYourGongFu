@@ -44,6 +44,7 @@ struct BRANCH_INFO
 {
 	const void* DstEip;
 	const void* SrcEip;
+	const ULONG_PTR* StackPtr;
 	ULONG64 Flags;
 };
 

@@ -285,6 +285,7 @@
     <ClCompile Include="StdAfx.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\Common\base\AutoMalloc.h" />
     <ClInclude Include="..\Common\base\Common.h" />
     <ClInclude Include="..\Common\base\ComparableId.hpp" />
     <ClInclude Include="..\Common\base\instrinsics.h" />

@@ -57,6 +57,24 @@ private:
 	CLockedAVL<RELLCALLHOOK_ID> m_hooks;
 };
 
-typedef COMPARABLE_ID_PTR<CRange<void>, CImage> CIMAGEINFO_ID;
+struct CIMAGEINFO_ID :
+	public COMPARABLE_ID_PTR<CRange<void>, CImage>
+{
+	CIMAGEINFO_ID() : COMPARABLE_ID_PTR()
+	{
+		Value = NULL;
+	}
+	CIMAGEINFO_ID(
+		__in const CRange<void>& id, 
+		__in_opt CImage* val = NULL
+		) : COMPARABLE_ID_PTR(id, val)
+	{
+	}
+
+	CRange<void>& Image()
+	{
+		return Id;
+	}
+};
 
 #endif //__IMAGEINFO_H__

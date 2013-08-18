@@ -22,8 +22,9 @@ EXTERN_C void patchguard_hook();
 
 CDbiMonitor CDbiMonitor::m_instance;
 
-CDbiMonitor::CDbiMonitor() 
-	: CSingleton(m_instance)
+CDbiMonitor::CDbiMonitor() :
+	CSingleton(m_instance),
+	m_branchInfo(KeQueryActiveProcessorCount(NULL))
 {
 	RtlZeroMemory(m_syscalls, sizeof(m_syscalls));
 }
@@ -55,7 +56,7 @@ void CDbiMonitor::Install()
 	if (CCRonos::EnableVirtualization())
 	{
 		CVirtualizedCpu* v_cpu = m_vCpu;
-		for (BYTE i = 0; i < m_vCpuCount; i++, v_cpu++)
+		for (BYTE i = 0; i < m_branchInfo.GetCount(); i++, v_cpu++)
 		{
 
 #if HYPERVISOR
@@ -217,6 +218,9 @@ EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
+	//PageFault hooked == BranchInfo have to find valid ptr
+	BRANCH_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
+
 	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 #define USER_MODE_CS 0x1
 	IRET* iret = PPAGE_FAULT_IRET(reg);
@@ -236,7 +240,7 @@ EXTERN_C void* PageFault(
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 		{
 			DbgPrint("\nPageFault in monitored process %p\n", fault_addr);
-			if (fuzzed_proc->PageFault(fault_addr, reg))
+			if (fuzzed_proc->PageFault(fault_addr, reg, &branch_info))
 				return NULL;
 		}
 		else
@@ -245,12 +249,15 @@ EXTERN_C void* PageFault(
 			{
 				if ((ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
 				{
-					fuzzed_proc = NULL;
-					(void)CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc);
-					if (fuzzed_proc)
+					if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc))
 					{
 						if (fuzzed_proc->PageFault(fault_addr, reg))
+						{
+							DbgPrint("\nremote acces OK -> %p %p %x\n", iret->Return, iret->Flags, iret->CodeSegment);
 							return NULL;
+						}
+
+						DbgPrint("\nremote acces failed\n");
 					}
 				}
 			}
@@ -291,7 +298,7 @@ void CDbiMonitor::TrapHandler(
 			//set-up next BTF hook
 			ULONG_PTR rflags = 0;
 			if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
-			{					
+			{
 				if (rflags & TRAP)
 				{
 					if (CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
@@ -302,15 +309,25 @@ void CDbiMonitor::TrapHandler(
 						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
 						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
 
-						BRANCH_INFO branch_i;
-						branch_i.DstEip = reinterpret_cast<const void*>(ins_addr);
-						branch_i.SrcEip = reinterpret_cast<const void*>(src);
-						branch_i.Flags = rflags;
-						CDbiMonitor::GetInstance().GetBranchStack().Push(branch_i);
-						ins_addr = FAST_CALL;
+						BRANCH_INFO* branch_i = CDbiMonitor::GetInstance().BranchInfoUnsafe(CVirtualizedCpu::GetCoreId(reg));
+						if (branch_i)
+						{
+							if (!vmread(VMX_VMCS64_GUEST_RSP, &branch_i->StackPtr))
+							{
+								branch_i->DstEip = reinterpret_cast<const void*>(ins_addr);
+								branch_i->SrcEip = reinterpret_cast<const void*>(src);
 
-						//disable trap flag and let handle it by PageFault Hndlr
-						vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
+								branch_i->Flags = rflags;
+
+								//CDbiMonitor::GetInstance().GetBranchStack().Push(*branch_i);
+
+								//disable trap flag and let handle it by PageFault Hndlr
+								vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
+								//set eip to non-exec mem for quick recognization by PageFault handler
+								vmwrite(VMX_VMCS64_GUEST_RIP, branch_i->StackPtr);
+								return;
+							}
+						}
 					}
 					else
 					{
@@ -330,10 +347,9 @@ void CDbiMonitor::TrapHandler(
 					CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
 				}
 			}
-
-			vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
 		}
 	}
+	vmwrite(VMX_VMCS64_GUEST_RIP, FAST_CALL);
 }
 
 //-----------------------------------------------------------
@@ -348,7 +364,7 @@ EXTERN_C void* RdmsrHook(
 	void* ret = (void*)reg[RCX];
 	DbgPrint("\nRdmsrHook %p [pethread : %p] -> dst = %p\n", ret, PsGetCurrentThread(), reg[RAX]);
 	reg[RCX] = IA64_SYSENTER_EIP;
-	//KeBreak();
+	KeBreak();
 	return ret;
 }
 

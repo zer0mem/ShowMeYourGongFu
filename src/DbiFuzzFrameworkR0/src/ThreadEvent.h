@@ -66,7 +66,6 @@ struct EVENT_THREAD_INFO
 	}
 
 	void DumpContext(
-		__in bool is64,
 		__in ULONG_PTR reg[REG_COUNT]
 		)
 	{
@@ -120,20 +119,23 @@ public:
 
 // FUZZ MONITOR HANDLER support routines
 	__checkReturn
-	bool MonitorFastCall(
+	bool HookEvent(
 		__in CImage* img,
 		__in ULONG_PTR reg[REG_COUNT]
-		);
+	);
 
 	__checkReturn
-	bool EventCallback(
-		__in CImage* img, 
+	bool SmartTraceEvent(
+		__in CImage* img,
 		__in ULONG_PTR reg[REG_COUNT],
+		__in const BRANCH_INFO& branchInfo,
 		__in CLockedAVL<CIMAGEINFO_ID>& imgs
 	);
 
 	__checkReturn
-	bool IsTrapSet();
+	bool SmartTrace(
+		__in ULONG_PTR reg[REG_COUNT]
+		);
 
 protected:
 	__checkReturn 

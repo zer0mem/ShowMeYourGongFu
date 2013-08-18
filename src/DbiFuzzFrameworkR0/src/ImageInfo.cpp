@@ -8,6 +8,8 @@
 #include "ImageInfo.h"
 
 #include "../../Common/base/Common.h"
+#include "Common/Constants.h"
+#include "../../Common/utils/HashString.hpp"
 
 CImage::CImage(
 	__in_opt UNICODE_STRING* fullImageName,
@@ -36,9 +38,13 @@ CImage::CImage(
 			memcpy(m_imgNameBuffer, m_imageName.Buffer, m_imageName.Length);
 			m_imgNameBuffer[m_imageName.Length >> 1] = 0;
 			m_imageName.Buffer = m_imgNameBuffer;
+
+			m_system = CConstants::GetInstance().SystemModulesAVL().Find(&CHashString(m_imageName));
 		}
 		return;
 	}
+
+	m_system = false;
 
 	m_imageName.Buffer = NULL;
 	m_imageName.Length = 0;
@@ -50,18 +56,26 @@ bool CImage::SetUpNewRelHook(
 	__in const void* addrOfHook 
 	)
 {
-	if (!m_hooks.Find(RELLCALLHOOK_ID(addrToHook)))
+	if (Image().IsInRange(addrToHook))
 	{
-		CRelCallHook* hook = new CRelCallHook(addrToHook, addrOfHook);
-		if (hook && hook->IsHooked())
+		if (!m_hooks.Find(RELLCALLHOOK_ID(addrToHook)))
 		{
-			RELLCALLHOOK_ID hook_id(addrToHook, hook);
-			if (m_hooks.Push(hook_id))
+			CRelCallHook* hook = new CRelCallHook(addrToHook, addrOfHook);
+			if (hook && hook->IsHooked())
 			{
-				hook_id.Value = NULL;//avoid dtor
-				return true;
+				RELLCALLHOOK_ID hook_id(addrToHook, hook);
+				if (m_hooks.Push(hook_id))
+				{
+					hook_id.Value = NULL;//avoid dtor
+					return true;
+				}
 			}
 		}
+	}
+	else
+	{
+		DbgPrint("\n this is probably not image inside you want to hook ;) : %p %p %p", addrToHook, Image().Begin(), Image().End());
+		KeBreak();
 	}
 	return false;
 }
@@ -81,6 +95,5 @@ void CImage::UninstallHook(
 	__in void* addrToHookDown 
 	)
 {
-	KeBreak();
 	(void)m_hooks.Pop(RELLCALLHOOK_ID(addrToHookDown));
 }

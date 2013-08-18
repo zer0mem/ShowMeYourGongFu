@@ -163,6 +163,18 @@ public:
 		return MEMBER(MMVAD_FLAGS, vadNode, m_vadFlags);
 	}
 
+	//template and sizeof ==> compiler optimalize it!
+	template<class TYPE>
+	__forceinline
+	static
+	ULONG_PTR* DeallocationStack(__in const TYPE* teb)
+	{
+		if (sizeof(TYPE) == sizeof(NT_TIB32))
+			return reinterpret_cast<ULONG_PTR*>((ULONG_PTR)teb + 0xE0C);
+		else
+			return reinterpret_cast<ULONG_PTR*>((ULONG_PTR)teb + 0x1478);
+	}
+
 protected:
 	static bool m_initialized;
 	

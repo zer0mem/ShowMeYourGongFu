@@ -180,7 +180,7 @@ void CVadScanner::SetUnwriteable(
 			BYTE low_prot = vad_mem.IsExecuteable() ? 3 /*PAGE_EXECUTE_READ*/ : 1 /*PAGE_READONLY*/;
 			flags.Protection = (flags.Protection & (~7)) | low_prot;
 
-			(void)SetVadMemoryRangeFlags((BYTE*)addr + size, flags);
+			(void)SetVadMemoryRangeFlags(reinterpret_cast<const BYTE*>((ULONG_PTR)addr + size), flags);
 		}
 	}
 }
@@ -202,7 +202,7 @@ void CVadScanner::SetWriteable(
 			BYTE low_prot = vad_mem.IsExecuteable() ? 3 /*PAGE_EXECUTE_READ*/ : 1 /*PAGE_READONLY*/;
 			flags.Protection = (flags.Protection & (~7)) | low_prot;
 
-			(void)SetVadMemoryRangeFlags((BYTE*)addr + size, flags);
+			(void)SetVadMemoryRangeFlags(reinterpret_cast<const BYTE*>((ULONG_PTR)addr + size), flags);
 		}
 	}
 }

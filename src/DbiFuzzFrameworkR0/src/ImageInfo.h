@@ -43,12 +43,14 @@ public:
 		__in void* addrToHookDown
 		);
 
+	bool IsSystem() { return m_system; }
 	bool Is64() { return m_is64; };
 	ULONG EntryPoint() { return m_entryPoint; };
 	UNICODE_STRING& ImageName() { return m_imageName; };
 
 protected:
 	bool m_is64;
+	bool m_system;
 	ULONG m_entryPoint;
 	UNICODE_STRING m_imageName;
 

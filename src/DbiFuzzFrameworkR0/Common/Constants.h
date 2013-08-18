@@ -32,6 +32,9 @@ class CConstants :
 
 		for (size_t i = 0; i < _countof(m_inAppModules); i++)
 			(void)m_inAppModulesAVL.Insert(&CHashString(m_inAppModules[i]));
+
+		for (size_t i = 0; i < _countof(m_systemModules); i++)
+			(void)m_systemModulesAVL.Insert(&CHashString(m_systemModules[i]));
 	}
 
 public:
@@ -44,7 +47,12 @@ public:
 	{
 		return m_inAppModulesAVL;
 	}
-	
+
+	CAVL<CHashString>& SystemModulesAVL()
+	{
+		return m_systemModulesAVL;
+	}
+
 	static 
 	const CHAR* InAppExtRoutines(
 		__in size_t ind
@@ -59,8 +67,12 @@ public:
 protected:
 	CAVL<CHashString> m_applicationsToFuzzAVL;
 	CAVL<CHashString> m_inAppModulesAVL;
+	CAVL<CHashString> m_systemModulesAVL;
+
 	static const UNICODE_STRING m_applicationsToFuzz[2];
 	static const UNICODE_STRING m_inAppModules[1];
+	static const UNICODE_STRING m_systemModules[6];
+
 	static const STRING m_inAppExtRoutines[ExtCount];
 };
 

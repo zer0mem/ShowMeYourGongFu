@@ -212,12 +212,20 @@ EXTERN_C void* SysCallCallback(
 	
 	return CDbiMonitor::GetInstance().GetSysCall((BYTE)core_id);
 }
-
+int gSpinac = 0;
 //handle acces to protected memory
 EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
+	if (gSpinac > 1)
+	{
+		DbgPrint("\nPageFault");
+		DbgPrint(" %p", readcr2());
+		IRET* iret = PPAGE_FAULT_IRET(reg);
+		DbgPrint(" %p", iret->Return);
+		DbgPrint(" %p\n", iret->Flags);
+	}
 	//PageFault hooked == BranchInfo have to find valid ptr
 	BRANCH_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
 
@@ -303,11 +311,6 @@ void CDbiMonitor::TrapHandler(
 				{
 					if (CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
 					{
-						CDbiMonitor::GetInstance().PrintfStack.Push(0x87654321);
-						CDbiMonitor::GetInstance().PrintfStack.Push(src);
-						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
-						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
 
 						BRANCH_INFO* branch_i = CDbiMonitor::GetInstance().BranchInfoUnsafe(CVirtualizedCpu::GetCoreId(reg));
 						if (branch_i)
@@ -329,26 +332,13 @@ void CDbiMonitor::TrapHandler(
 							}
 						}
 					}
-					else
-					{
-						CDbiMonitor::GetInstance().PrintfStack.Push(0xBADF00D0);
-						CDbiMonitor::GetInstance().PrintfStack.Push(src);
-						CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-						CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
-						CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
-					}
-				}
-				else
-				{
-					CDbiMonitor::GetInstance().PrintfStack.Push(0xDEADCAFE);
-					CDbiMonitor::GetInstance().PrintfStack.Push(src);
-					CDbiMonitor::GetInstance().PrintfStack.Push(ins_addr);
-					CDbiMonitor::GetInstance().PrintfStack.Push(rflags);
-					CDbiMonitor::GetInstance().PrintfStack.Push(rdmsr(MSR_LASTBRANCH_TOS));
 				}
 			}
 		}
 	}
+	ULONG_PTR rflags = 0;
+	vmread(VMX_VMCS_GUEST_RFLAGS, &rflags);
+	vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 	vmwrite(VMX_VMCS64_GUEST_RIP, FAST_CALL);
 }
 
@@ -405,7 +395,14 @@ void CDbiMonitor::HookProtectionMSR(
 
 //II. TODO : drx acces for avoiding detection of IDT[PageFault] hook 
 //...
-
+EXTERN_C void* PatchGuardHook( 
+	__inout ULONG_PTR reg[REG_COUNT]
+	)
+{
+	DbgPrint("\n >>>>>> PatchGuardHook %p\n\n", reg);
+	KeBreak();
+	return NULL;
+}
 
 //----------------------------------------------------------------
 // ****************** R3 -> HYPERVISOR FASTCALL ******************
@@ -431,15 +428,6 @@ void CDbiMonitor::CPUIDCALLBACK(
 			vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags | TRAP));
 		}
 	}
-}
-
-EXTERN_C void* PatchGuardHook( 
-	__inout ULONG_PTR reg[REG_COUNT]
-	)
-{
-	DbgPrint("\n >>>>>> PatchGuardHook %p\n\n", reg);
-	KeBreak();
-	return NULL;
 }
 
 void CDbiMonitor::AntiPatchGuard( 

@@ -109,7 +109,7 @@ public:
 		AVL_NODE<TYPE>* found_or_parent;
 		if (CBinTreeWalker::Find(CONTAINING_RECORD(key, AVL_NODE<TYPE>, Value), &found_or_parent))
 		{
-			if (CBinTreeWalker::GetNext((const AVL_NODE<TYPE>**)&found_or_parent))
+			if (CBinTreeWalker::GetNext(const_cast<const AVL_NODE<TYPE>**>(&found_or_parent)))
 			{
 				//shared ptr ...
 				*val = &found_or_parent->Value;

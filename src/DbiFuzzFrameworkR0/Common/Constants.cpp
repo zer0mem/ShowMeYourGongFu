@@ -25,4 +25,14 @@ const STRING CConstants::m_inAppExtRoutines[] =
 	RTL_CONSTANT_STRING("ExtMain"),
 };
 
+const UNICODE_STRING CConstants::m_systemModules[] =
+{
+	RTL_CONSTANT_STRING(L"ntdll.dll"),
+	RTL_CONSTANT_STRING(L"kernel32.dll"),
+	RTL_CONSTANT_STRING(L"kernelbase.dll"),
+	RTL_CONSTANT_STRING(L"msvcrt.dll"),
+	RTL_CONSTANT_STRING(L"user32.dll"),
+	RTL_CONSTANT_STRING(L"gdi32.dll"),
+};
+
 CConstants CConstants::m_instance;

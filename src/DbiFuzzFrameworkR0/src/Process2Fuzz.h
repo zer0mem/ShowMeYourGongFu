@@ -78,7 +78,7 @@ public:
 	bool PageFault( 
 		__in BYTE* faultAddr, 
 		__inout ULONG_PTR reg[REG_COUNT],
-		__in_opt const BRANCH_INFO* branchInfo = NULL
+		__in_opt BRANCH_INFO* branchInfo = NULL
 	);
 
 protected:
@@ -100,7 +100,7 @@ protected:
 	bool R3CommPipe( 
 		__in BYTE* faultAddr, 
 		__inout ULONG_PTR reg[REG_COUNT],
-		__in const BRANCH_INFO* branchInfo
+		__in BRANCH_INFO* branchInfo
 		);
 
 protected:

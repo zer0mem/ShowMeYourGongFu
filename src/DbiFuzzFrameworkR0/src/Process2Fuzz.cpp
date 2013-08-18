@@ -142,16 +142,11 @@ void CProcess2Fuzz::ThreadNotifyRoutine(
 	)
 {
 	CThreadEvent thread_info(threadId, processId);
+
 	if (!!create)
-	{
 		(void)m_threads.Push(thread_info);
-		(void)m_stacks.Push(thread_info.Stack);
-	}
 	else
-	{
 		(void)m_threads.Pop(thread_info);
-		(void)m_stacks.Pop(thread_info.Stack);
-	}
 
 	DbgPrint("\n @ThreadNotifyRoutine %x %p %s\n", processId, PsGetCurrentProcess(), !!create ? "start" : "exit");
 }
@@ -164,15 +159,9 @@ void CProcess2Fuzz::RemoteThreadNotifyRoutine(
 {
 	CThreadEvent thread_info(threadId, parentProcessId);
 	if (!!create)
-	{
 		(void)m_threads.Push(thread_info);
-		(void)m_stacks.Push(thread_info.Stack);
-	}
 	else
-	{
 		(void)m_threads.Pop(thread_info);
-		(void)m_stacks.Pop(thread_info.Stack);
-	}
 
 	DbgPrint("\n REMOTE!ThreadNotifyRoutine %x %p %s\n", parentProcessId, PsGetCurrentProcess(), !!create ? "start" : "exit");
 }
@@ -191,7 +180,6 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 	__inout_opt BYTE* buffer /*= NULL*/
 	)
 {
-/*
 	DbgPrint("\n@VirtualMemoryCallback %p %p [thread : %p]\n", PsGetThreadProcessId(PsGetCurrentThread()), m_processId, PsGetCurrentThread());
 	CThreadEvent* fuzz_thread;
 	if (m_threads.Find(CThreadEvent(), &fuzz_thread))
@@ -200,7 +188,7 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 		DbgPrint("\n >  I. @Prologue %p %p [%p]\n", r3stack, *r3stack, reg[RCX]);
 		fuzz_thread->SetCallbackEpilogue(reg, memory, size, write);
 	}
-*/
+
 	return false;
 }
 
@@ -209,7 +197,6 @@ bool CProcess2Fuzz::Syscall(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-/*
 	//implement ref counting ? auto_ptr...
 	//but assumption, if thread is in syscall then it can not exit for now good enough...
 	CThreadEvent* fuzz_thread;
@@ -218,9 +205,9 @@ bool CProcess2Fuzz::Syscall(
 		if (fuzz_thread->WaitForSyscallEpilogue())
 		{				
 			if (fuzz_thread->LastMemoryInfo.Write &&
-				!m_stacks.Find(reinterpret_cast<ULONG_PTR*>(fuzz_thread->LastMemoryInfo.Memory)))
+				!fuzz_thread->Stack().IsInRange(reinterpret_cast<ULONG_PTR*>(fuzz_thread->LastMemoryInfo.Memory)))
 			{
-				//SetUnwriteable(fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size);
+				SetUnwriteable(fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size);
 			}
 				
 			DbgPrint("\n > @Epilogue %p %x %s\n", fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size, fuzz_thread->LastMemoryInfo.Write ? "attempt to write" : "easy RE+ attempt");
@@ -228,7 +215,7 @@ bool CProcess2Fuzz::Syscall(
 			return true;
 		}
 	}
-*/
+
 	return CSYSCALL::Syscall(reg);
 }
 
@@ -270,9 +257,9 @@ __checkReturn
 bool CProcess2Fuzz::PageFault( 
 	__in BYTE* faultAddr, 
 	__inout ULONG_PTR reg[REG_COUNT],
-	__in_opt const BRANCH_INFO* branchInfo /* = NULL */
+	__in_opt BRANCH_INFO* branchInfo /* = NULL */
 	)
-{	
+{
 	if (PsGetCurrentProcessId() == m_processId)
 	{
 		void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
@@ -289,10 +276,10 @@ bool CProcess2Fuzz::PageFault(
 
 	if (PsGetCurrentProcessId() == m_processId)
 	{
-
 		if (m_nonWritePages.Find(CMemoryRange(faultAddr, sizeof(BYTE))))
 		{
-			KeBreak();
+			//KeBreak();
+			DbgPrint("\nnon-writeable back to writeable!!\n");
 			m_nonWritePages.Pop(CMemoryRange(faultAddr, sizeof(BYTE)));
 			if (!CMMU::IsWriteable(faultAddr))
 			{
@@ -312,7 +299,7 @@ __checkReturn
 bool CProcess2Fuzz::R3CommPipe( 
 	__in BYTE* faultAddr, 
 	__inout ULONG_PTR reg[REG_COUNT],
-	__in const BRANCH_INFO* branchInfo
+	__in BRANCH_INFO* branchInfo
 	)
 {
 	IRET* iret = PPAGE_FAULT_IRET(reg);
@@ -339,16 +326,26 @@ bool CProcess2Fuzz::R3CommPipe(
 			return false;
 		}
 
-		//if (m_stacks.Find(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
-		{
-			if (iret->Return == branchInfo->StackPtr)
-			{
-				DbgPrint("\nSmartTracer! %p == %s\n", iret->Return, m_stacks.Find(reinterpret_cast<const ULONG_PTR*>(iret->Return)) ? "in stacks..." : "not in stack ?!");
 
-				//handle branch tracing - callback from HV
-				iret->Return = m_extRoutines[ExtTrapTrace];
-				return true;
+		CThreadEvent* fuzz_thread;
+		if (!m_threads.Find(CThreadEvent(), &fuzz_thread))
+		{
+			DbgPrint("\nunknown thread\n");
+			KeBreak();
+		}
+
+		if (iret->Return == branchInfo->StackPtr)
+		{
+			DbgPrint("\n!!SmartTracer! %p == %s\n", iret->Return, m_stacks.Find(reinterpret_cast<const ULONG_PTR*>(iret->Return)) ? "in stacks..." : "not in stack ?!");
+
+			if (!fuzz_thread->Stack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
+			{
+				DbgPrint("\nnot resolved stack range!!\n");
+				KeBreak();
 			}
+			//handle branch tracing - callback from HV
+			iret->Return = m_extRoutines[ExtTrapTrace];
+			return true;
 		}
 	}
 
@@ -377,7 +374,33 @@ bool CProcess2Fuzz::R3CommPipe(
 						{
 							CIMAGEINFO_ID* img;
 							if (m_loadedImgs.Find(CIMAGEINFO_ID(iret->Return), &img))
+							{
+								//handle x86 -> x64, x64 -> x86 calls
+								CIMAGEINFO_ID* img_id;
+
+								CImage* dst_img;
+								if (m_loadedImgs.Find(CIMAGEINFO_ID(branchInfo->DstEip), &img_id) && img_id->Value)
+								{
+									dst_img = img_id->Value;
+									CImage* src_img;
+									if (m_loadedImgs.Find(CIMAGEINFO_ID(branchInfo->SrcEip), &img_id) && img_id->Value)
+									{
+										src_img = img_id->Value;
+
+										if (src_img->Is64() != dst_img->Is64() || src_img->IsSystem() || dst_img->IsSystem())
+										{
+											if (m_loadedImgs.Find(CIMAGEINFO_ID(reinterpret_cast<const void*>(reg[DBI_RETURN])), &img_id) && img_id->Value)
+											{
+												img_id->Value->SetUpNewRelHook(reinterpret_cast<void*>(reg[DBI_RETURN]), m_extRoutines[ExtMain]);
+												branchInfo->Flags &= (~TRAP);
+												DbgPrint("-----------> %p %p %p", branchInfo->DstEip, branchInfo->SrcEip, reg[DBI_RETURN]);
+											}
+										}
+									}
+								}
+
 								return fuzz_thread->SmartTraceEvent(img->Value, reg, *branchInfo, m_loadedImgs);
+							}
 						}
 						break;
 					default:

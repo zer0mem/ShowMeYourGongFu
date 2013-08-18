@@ -33,7 +33,7 @@ extern "C" void fast_call_monitor(
 __declspec(naked)
 void __stdcall FastCallEvent(
 	__in ULONG_PTR fastCall,
-	__in ULONG_PTR Reserved = NULL
+	__in void* retHookAddr
 	)
 {
 	//stdcall stack => 0:[pushf] 1:[ret1] 2:[fastCall] 3:[Reserved] 4:[ret2 except hook it should be rnd]
@@ -59,10 +59,12 @@ void __stdcall FastCallEvent(
 
 		mov dword ptr [esp + DBI_INFO_OUT * 4], eax
 
-		lea eax, [ebp + 1 * 4] ; ebp : 0:[pushf] 1:[ret1] 2:[fastCall] 3:[Reserved] 4:[ret2]
+		;SYSCALL_HOOK specific {
+		lea eax, [ebp + 1 * 4] ; ebp : 0:[pushf] 1:[ret1] 2:[fastCall] 3:[ret2 / retHookAddr]
 		mov dword ptr [esp + DBI_IRET * 4], eax
-		mov eax, dword ptr [ebp + 4 * 4]
+		mov eax, retHookAddr;dword ptr [ebp + 3 * 4]
 		mov dword ptr [esp + DBI_RETURN * 4], eax
+		;} SYSCALL_HOOK specific
 
 		mov ecx, fastCall
 		mov dword ptr [esp + DBI_ACTION * 4], ecx ;fastCall
@@ -131,6 +133,7 @@ semaphore_on:
 
 		mov eax, info
 		mov dword ptr [esp + DBI_INFO_OUT * 4], eax
+
 		popad
 		mov eax, [ebp]
 
@@ -153,13 +156,23 @@ _WaitForFuzzEvent:
 DLLEXPORT
 void ExtTrapTrace()
 {
-	FastCallEvent(SYSCALL_TRACE_FLAG);
+	__asm
+	{
+			push [esp] ;in case of CALL FAR
+			push SYSCALL_TRACE_FLAG
+			call FastCallEvent
+	}
 }
 
 DLLEXPORT
 void ExtMain()
 {
-	FastCallEvent(SYSCALL_HOOK);
+	__asm
+	{
+		;push retHookAddr <- current ret
+		push SYSCALL_HOOK
+		call FastCallEvent
+	}
 }
 
 EXTERN_C __declspec(dllexport) 

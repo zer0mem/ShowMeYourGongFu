@@ -126,7 +126,7 @@ public:
 		__inout TYPE** val
 		)
 	{
-		const TYPE* root = (TYPE*)GetRoot();
+		const TYPE* root = GetRoot();
 		if (root)
 		{
 			for (const TYPE* parent = key; root != parent; )
@@ -147,7 +147,7 @@ public:
 					root = LeftChild(root);
 			}
 			
-			*val = (TYPE*)root;
+			*val = const_cast<TYPE*>(root);
 
 			return (*key == *root);
 		}		

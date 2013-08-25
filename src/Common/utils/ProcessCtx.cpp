@@ -69,6 +69,7 @@ void CProcessContext<THRD, PROC, IMG>::ImageNotifyRoutine(
 			}
 			else
 			{
+				KeBreak();
 				if (!m_mainImg)
 					m_internalError = true;
 			}

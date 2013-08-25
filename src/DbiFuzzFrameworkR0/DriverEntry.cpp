@@ -45,6 +45,26 @@ void EnviromentDependentVariablesInit()
 		offsetof(_MMVAD_SHORT, EndingVpn),
 		offsetof(_MMVAD_SHORT, Flags)
 		);
+
+	/*
+	//win7 SP1 ? - to check
+	CUndoc::Init(
+		0x448,
+		0x218,
+		0x390,
+		0x440,
+		0x450,
+		offsetof(_MM_AVL_TABLE, BalancedRoot),
+		offsetof(_MM_AVL_TABLE, AvlInfo),
+		(~0x3),
+		(offsetof(_MMVAD_SHORT, VadNode) + offsetof(_MM_AVL_NODE, Parent)), 
+		(offsetof(_MMVAD_SHORT, VadNode) + offsetof(_MM_AVL_NODE, LeftChild)), 
+		(offsetof(_MMVAD_SHORT, VadNode) + offsetof(_MM_AVL_NODE, RightChild)),
+		offsetof(_MMVAD_SHORT, StartingVpn), 
+		offsetof(_MMVAD_SHORT, EndingVpn),
+		offsetof(_MMVAD_SHORT, Flags)
+		);
+		*/
 }
 
 NTSTATUS DriverEntry(
@@ -57,7 +77,7 @@ NTSTATUS DriverEntry(
 
 	_cinit(0);
 
-	DbgPrint("DriverEntry\n");
+	("DriverEntry\n");
 	driverObject->DriverUnload = OnUnload;
 
 	CDbiMonitor::GetInstance().Install();

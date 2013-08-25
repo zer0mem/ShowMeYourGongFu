@@ -23,9 +23,7 @@ enum
 
 	SYSCALL_WATCH_MEMORY,
 	SYSCALL_GETPROCADDR,
-	SYSCALL_SET_EIP,
 	SYSCALL_SET_HOOK,
-	SYSCALL_RUN,
 
 	SYSCALL_INIT,
 };
@@ -69,6 +67,14 @@ enum EnumIRET
 	IRetCount
 };
 
+enum EnumTraceReason
+{
+	BranchTraceFlag = 0,
+	TraceFlag,
+	Hook,
+	MemoryAcces
+};
+
 #pragma pack(push, 1)
 
 template<class TYPE>
@@ -81,13 +87,13 @@ struct TYPE_X86COMPATIBLE
 	};
 };
 
-struct BRANCH_INFO 
+struct TRACE_INFO 
 {
-	TYPE_X86COMPATIBLE<const void*> DstEip;
-	TYPE_X86COMPATIBLE<const void*> SrcEip;
+	TYPE_X86COMPATIBLE<const void*> Eip;
+	TYPE_X86COMPATIBLE<const void*> PrevEip;
 	TYPE_X86COMPATIBLE<const ULONG_PTR*> StackPtr;
-	TYPE_X86COMPATIBLE<BYTE*> Cr2;
 	TYPE_X86COMPATIBLE<ULONG64> Flags;
+	TYPE_X86COMPATIBLE<ULONG64> Reason;
 };
 
 struct MEMORY_ACCESS
@@ -103,7 +109,7 @@ struct MEMORY_ACCESS
 struct DBI_OUT_CONTEXT
 {
 	ULONG_PTR GeneralPurposeContext[REG_COUNT + 1];
-	BRANCH_INFO LastBranchInfo;
+	TRACE_INFO TraceInfo;
 	MEMORY_ACCESS MemoryInfo;
 };
 

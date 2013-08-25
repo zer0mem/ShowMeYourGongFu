@@ -70,9 +70,6 @@ void CDbiMonitor::Install()
 				int InfoType = 0;
 				__cpuid(CPUInfo, InfoType);
 				DbgPrint("\r\n~~~~~~~~~~~ CPUID (%i) : %s ~~~~~~~~~~~\r\n", i, CPUInfo);
-
-				HookSyscallMSR(sysenter);
-				DbgPrint("II. procid [%x] <=> syscall addr [%p]\n\n", i, (ULONG_PTR)rdmsr(IA64_SYSENTER_EIP));		
 			}
 		}
 	}
@@ -110,7 +107,8 @@ void CDbiMonitor::PerCoreAction(
 		//set branching on basig blocks!!! + turn on last branch stack!
 		wrmsr(IA32_DEBUGCTL, (rdmsr(IA32_DEBUGCTL) | BTF | LBR));
 		//rdmsr / wrmsr dont affect guest MSR!!!!!!!
-
+/*
+//hook after PG disabled ....
 		GDT	idtr;
 		sidt(&idtr);
 
@@ -120,17 +118,21 @@ void CDbiMonitor::PerCoreAction(
 			if (idt)
 			{
 				PageFaultHandlerPtr[coreId] = reinterpret_cast<void*>(
-												((((ULONG_PTR)idt[TRAP_page_fault].ExtendedOffset) << 32) | 
-												(((ULONG)idt[TRAP_page_fault].Selector) << 16) | 
-												idt[TRAP_page_fault].Offset));
+					((((ULONG_PTR)idt[TRAP_page_fault].ExtendedOffset) << 32) | 
+					(((ULONG)idt[TRAP_page_fault].Selector) << 16) | 
+					idt[TRAP_page_fault].Offset));
 
-				//hook ...
-				idt[TRAP_page_fault].ExtendedOffset = (((ULONG_PTR)pagafault_hook) >> 32);
-				idt[TRAP_page_fault].Offset = (WORD)(ULONG_PTR)pagafault_hook;
-				idt[TRAP_page_fault].Selector = (WORD)(((DWORD)(ULONG_PTR)pagafault_hook) >> 16);
+				{
+					//hook ...
+					CDisableInterrupts cli_sti;
+					idt[TRAP_page_fault].ExtendedOffset = (((ULONG_PTR)pagafault_hook) >> 32);
+					idt[TRAP_page_fault].Offset = (WORD)(ULONG_PTR)pagafault_hook;
+					idt[TRAP_page_fault].Selector = (WORD)(((DWORD)(ULONG_PTR)pagafault_hook) >> 16);
+				}
+
 			}
 		}
-
+*/
 		m_syscalls[coreId] = (void*)rdmsr(IA64_SYSENTER_EIP);
 		HookSyscallMSR(sysenter);
 		DbgPrint("Hooked. procid [%x] <=> syscall addr [%p]\n", coreId, m_syscalls[coreId]);
@@ -166,10 +168,18 @@ void* CDbiMonitor::GetPFHandler(
 	__in BYTE coreId 
 	)
 {
-	if (coreId > MAX_PROCID)
-		return NULL;
+	if (coreId < MAX_PROCID)
+		return CDbiMonitor::PageFaultHandlerPtr[coreId];
+	return NULL;
+}
 
-	return CDbiMonitor::PageFaultHandlerPtr[coreId];
+void CDbiMonitor::SetPFHandler( 
+	__in BYTE coreId,
+	__in void* pfHndlr 
+	)
+{
+	if (coreId < MAX_PROCID)
+		CDbiMonitor::PageFaultHandlerPtr[coreId] = pfHndlr;
 }
 
 //getter
@@ -183,7 +193,7 @@ bool CDbiMonitor::GetProcess(
 }
 
 //dbgprint helper
-CStack<BRANCH_INFO>& CDbiMonitor::GetBranchStack()
+CStack<TRACE_INFO>& CDbiMonitor::GetBranchStack()
 {
 	return m_branchStack;
 }
@@ -199,7 +209,7 @@ EXTERN_C void* SysCallCallback(
 	__inout ULONG_PTR reg [REG_COUNT]
 	)
 {
-	BRANCH_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
+	TRACE_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
 
 	CProcess2Fuzz* fuzzed_proc;
 	if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
@@ -232,7 +242,7 @@ EXTERN_C void* PageFault(
 	)
 {
 	//PageFault hooked == BranchInfo have to find valid ptr
-	BRANCH_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
+	TRACE_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
 
 	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 	PFIRET* iret = PPAGE_FAULT_IRET(reg);
@@ -246,7 +256,7 @@ EXTERN_C void* PageFault(
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 		{
-			DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
+			//DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
 			if (fuzzed_proc->PageFault(fault_addr, reg, &branch_info))
 				return NULL;
 		}
@@ -310,15 +320,14 @@ void CDbiMonitor::TrapHandler(
 
 					if (CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
 					{
-						BRANCH_INFO* branch_i = CDbiMonitor::GetInstance().BranchInfoUnsafe(CVirtualizedCpu::GetCoreId(reg));
+						TRACE_INFO* branch_i = CDbiMonitor::GetInstance().BranchInfoUnsafe(CVirtualizedCpu::GetCoreId(reg));
 						if (branch_i)
 						{
 							if (!vmread(VMX_VMCS64_GUEST_RSP, &branch_i->StackPtr))
 							{
-								branch_i->DstEip.Value = reinterpret_cast<const void*>(ins_addr);
-								branch_i->SrcEip.Value = reinterpret_cast<const void*>(src);
+								branch_i->Eip.Value = reinterpret_cast<const void*>(ins_addr);
+								branch_i->PrevEip.Value = reinterpret_cast<const void*>(src);
 
-								branch_i->Cr2.Value = reinterpret_cast<BYTE*>(readcr2());
 								branch_i->Flags.Value = rflags;
 
 								//disable trap flag and let handle it by PageFault Hndlr
@@ -353,6 +362,43 @@ EXTERN_C void* RdmsrHook(
 	DbgPrint("\nRdmsrHook %p [pethread : %p] -> dst = %p\n", ret, PsGetCurrentThread(), reg[RAX]);
 	reg[RCX] = IA64_SYSENTER_EIP;
 	KeBreak();
+
+	WORD ebfe = 0xFEEB;
+	memcpy(ret, &ebfe, sizeof(ebfe));
+
+	BYTE core_id = 0;
+	CProcessorWalker cpu_w;
+	while (cpu_w.NextCore(&core_id, core_id))
+	{
+
+		KeSetSystemAffinityThread(PROCID(core_id));
+
+		GDT	idtr;
+		sidt(&idtr);
+
+		{
+			CMdl mdl(reinterpret_cast<void*>(idtr.base), IDT_SIZE);
+			GATE_DESCRIPTOR* idt = reinterpret_cast<GATE_DESCRIPTOR*>(mdl.WritePtr());
+			if (idt)
+			{
+				CDbiMonitor::GetInstance().SetPFHandler( core_id, reinterpret_cast<void*>(
+					((((ULONG_PTR)idt[TRAP_page_fault].ExtendedOffset) << 32) | 
+					(((ULONG)idt[TRAP_page_fault].Selector) << 16) | 
+					idt[TRAP_page_fault].Offset)) );
+
+				//hook ...
+				{
+					CDisableInterrupts cli_sti;
+					idt[TRAP_page_fault].ExtendedOffset = (((ULONG_PTR)pagafault_hook) >> 32);
+					idt[TRAP_page_fault].Offset = (WORD)(ULONG_PTR)pagafault_hook;
+					idt[TRAP_page_fault].Selector = (WORD)(((DWORD)(ULONG_PTR)pagafault_hook) >> 16);
+				}
+			}
+		}
+
+		core_id++;//follow with next core
+	}
+
 	return ret;
 }
 

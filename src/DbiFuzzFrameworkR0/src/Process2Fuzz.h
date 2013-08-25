@@ -44,17 +44,19 @@ public:
 	__checkReturn
 	bool Syscall(
 		__inout ULONG_PTR reg[REG_COUNT],
-		__in_opt BRANCH_INFO* branchInfo = NULL
+		__in_opt TRACE_INFO* branchInfo = NULL
 		);
 
 	__checkReturn
 	bool PageFault( 
 		__in BYTE* faultAddr, 
 		__inout ULONG_PTR reg[REG_COUNT],
-		__in_opt BRANCH_INFO* branchInfo = NULL
+		__in_opt TRACE_INFO* branchInfo = NULL
 	);
 
 protected:
+	void ResolveThreads();
+
 	__checkReturn
 	bool VirtualMemoryCallback(
 		__in void* memory,
@@ -107,7 +109,7 @@ private:
 	__checkReturn
 	bool DbiTraceEvent(
 		__inout ULONG_PTR reg[REG_COUNT],
-		__in BRANCH_INFO* branchInfo
+		__in TRACE_INFO* branchInfo
 		);
 
 	__checkReturn
@@ -159,21 +161,11 @@ private:
 	bool DbiPatchMemory(
 		__inout ULONG_PTR reg[REG_COUNT]
 		);
-		
-	__checkReturn
-	bool DbiSetEip(
-		__inout ULONG_PTR reg[REG_COUNT]
-	);
 
 	__checkReturn
 	bool DbiSetHook(
 		__inout ULONG_PTR reg[REG_COUNT]
 	);
-		
-	__checkReturn
-	bool DbiRun(
-		__inout ULONG_PTR reg[REG_COUNT]
-		);
 
 protected:
 	bool m_installed;

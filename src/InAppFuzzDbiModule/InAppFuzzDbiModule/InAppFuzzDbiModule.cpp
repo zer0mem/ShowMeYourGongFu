@@ -322,3 +322,13 @@ void DbiSetHook(
 {
 	FastCallMonitor(SYSCALL_SET_HOOK, procId, threadId, dbiParams);
 }
+
+EXTERN_C __declspec(dllexport) 
+void DbiWatchMemoryAccess(
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout PARAM_MEM2WATCH* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_WATCH_MEMORY, procId, threadId, dbiParams);
+} 

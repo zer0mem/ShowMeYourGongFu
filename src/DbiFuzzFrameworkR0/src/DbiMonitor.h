@@ -39,14 +39,19 @@ public:
 		__in BYTE coreId
 		);
 
-	BRANCH_INFO* BranchInfoUnsafe(
+	void SetPFHandler( 
+		__in BYTE coreId, 
+		__in void* pfHndlr 
+		);
+
+	TRACE_INFO* BranchInfoUnsafe(
 		__in size_t ind
 		)
 	{
 		return &m_branchInfo[ind];
 	}
 
-	CStack<BRANCH_INFO>& GetBranchStack();
+	CStack<TRACE_INFO>& GetBranchStack();
 
 	__forceinline
 	__checkReturn
@@ -92,9 +97,9 @@ protected:
 	void AntiPatchGuard(
 		__inout ULONG_PTR reg[REG_COUNT] 
 	);
-	
-	CStack<BRANCH_INFO> m_branchStack;
-	CAutoTypeMalloc<BRANCH_INFO> m_branchInfo;
+
+	CStack<TRACE_INFO> m_branchStack;
+	CAutoTypeMalloc<TRACE_INFO> m_branchInfo;
 	CProcessMonitor<CProcess2Fuzz> m_procMonitor;
 
 protected:

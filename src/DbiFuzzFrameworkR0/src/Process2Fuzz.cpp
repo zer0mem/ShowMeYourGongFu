@@ -69,7 +69,7 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 	{
 		if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img_id->Value->ImageName())))
 		{
-			KeBreak();
+			//KeBreak();
 			CPE pe(imageInfo->ImageBase);
 			const void* func_name;
 			for (size_t i = 0; (func_name = CConstants::InAppExtRoutines(i)); i++)
@@ -97,7 +97,6 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 	{
 		if (fuzz_thread->IsMemory2Watch(memory, size))
 		{
-			KeBreak();
 			CMMU::SetValid(memory, size);
 		}
 	}
@@ -113,16 +112,15 @@ __checkReturn
 bool CProcess2Fuzz::PageFault( 
 	__in BYTE* faultAddr, 
 	__inout ULONG_PTR reg[REG_COUNT],
-	__in_opt BRANCH_INFO* branchInfo /* = NULL */
+	__in_opt TRACE_INFO* branchInfo /* = NULL */
 	)
 {
+	ResolveThreads();
 	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 
 //HACKY PART OF PAGEFAULT >>> should be moved to more appropriate place ...
 	if (FAST_CALL == (ULONG_PTR)iret->Return)
 	{
-		DbgPrint("\nHV FastIOCall - callback");
-		KeBreak();
 		return false;
 	}
 
@@ -136,8 +134,6 @@ bool CProcess2Fuzz::PageFault(
 			{
 				void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
 				m_installed = m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtHook]);
-
-				if (m_installed) DbgPrint("\nHook set at : %p\n", ep_hook);
 			}
 			// } ************************** INSTAL EP HOOK ************************** 
 
@@ -145,7 +141,7 @@ bool CProcess2Fuzz::PageFault(
 			if (iret->Return == faultAddr)
 			{
 				//disabled due codecoverme.exe
-				//if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
+				//if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))//codecoverme.exe ohack
 				{
 					if (iret->Return == branchInfo->StackPtr.Value)
 					{
@@ -176,38 +172,26 @@ bool CProcess2Fuzz::PageFault(
 		CThreadEvent* fuzz_thread;
 		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
-
-			if (((ULONG_PTR)faultAddr & 0xFFF) == 0x367)
-			{
-				CVadScanner vad_scanner(PsGetCurrentThread());
-
-				CVadNodeMemRange vad_mem;
-				if (vad_scanner.FindVadMemoryRange(faultAddr, &vad_mem))
-					fuzz_thread->insert_tmp(CMemoryRange(reinterpret_cast<BYTE*>(PAGE_ALIGN(faultAddr)), PAGE_SIZE, vad_mem.GetFlags().UFlags | DIRTY_FLAG));
-			}
-
 			CMemoryRange* mem;
 			if (fuzz_thread->GetMemory2Watch(faultAddr, sizeof(ULONG_PTR), &mem))
 			{
 				if (mem->MatchFlags(DIRTY_FLAG))
 				{
-
 					mem->SetFlags(mem->GetFlags() & ~DIRTY_FLAG);
 
 					//disable BTF : not wrmsr but instead DEBUG REGISTERS!! -> per thread!
 					//disable_branchtrace(); //-> VMX.cpp initialize vmm : vmwrite(VMX_VMCS64_GUEST_DR7, 0x400);
-
 					wrmsr(IA32_DEBUGCTL, ~(BTF | LBR));//disable BTF -> special handling for wrmsr in HV
 					iret->Flags |= TRAP; 
+
+					CThreadEvent* fuzz_thread;
+					if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
+						//temporary this set also as valid ... 
+						fuzz_thread->RegisterMemoryAccess(faultAddr, iret->ErrorCode, mem->Begin(), mem->GetSize(), mem->GetFlags());
 
 					if (CMMU::IsAccessed(faultAddr))
 					{
 						CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));
-
-						CThreadEvent* fuzz_thread;
-						if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
-							fuzz_thread->SetMemoryAccess(faultAddr, iret->ErrorCode, mem->Begin(), mem->GetSize(), mem->GetFlags());
-
 						return true;
 					}
 				}
@@ -239,7 +223,7 @@ bool CProcess2Fuzz::DbiHook(
 __checkReturn
 bool CProcess2Fuzz::DbiTraceEvent( 
 	__inout ULONG_PTR reg[REG_COUNT],
-	__in BRANCH_INFO* branchInfo
+	__in TRACE_INFO* branchInfo
 	)
 {
 	PFIRET* iret = PPAGE_FAULT_IRET(reg);
@@ -251,15 +235,13 @@ bool CProcess2Fuzz::DbiTraceEvent(
 		if (GetImage(iret->Return, &img))
 		{
 			//handle x86 -> x64, x64 -> x86 calls
-			if (branchInfo->SrcEip.Value != MM_LOWEST_USER_ADDRESS)
+			if (branchInfo->PrevEip.Value != MM_LOWEST_USER_ADDRESS)
 			{
-				branchInfo->Cr2.Value = NULL;
-
 				CImage* dst_img;
-				if (GetImage(branchInfo->DstEip.Value, &dst_img))
+				if (GetImage(branchInfo->Eip.Value, &dst_img))
 				{
-					CImage* src_img;
-					if (GetImage(branchInfo->SrcEip.Value, &src_img))
+					//CImage* src_img;
+					//if (GetImage(branchInfo->PrevEip.Value, &src_img))
 					{
 						if (m_mainImg->Is64() != dst_img->Is64() || dst_img->IsSystem())
 						{
@@ -268,39 +250,30 @@ bool CProcess2Fuzz::DbiTraceEvent(
 							{
 								target_img->SetUpNewRelHook(reinterpret_cast<void*>(reg[DBI_RETURN]), m_extRoutines[ExtHook]);
 								branchInfo->Flags.Value &= (~TRAP);
-								DbgPrint("-----------> %p %p %p", branchInfo->DstEip.Value, branchInfo->SrcEip.Value, reg[DBI_RETURN]);
+								//DbgPrint("-----------> %p %p %p", branchInfo->Eip.Value, branchInfo->PrevEip.Value, reg[DBI_RETURN]);
 
 							}
 						}
 
-
+						/*
 						DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG : %p)> : >> %p -%x [%ws (%s)] %p -%x [%ws (%s)] | dbg -> %ws //%p\n", 
 							branchInfo->Flags,
-							branchInfo->SrcEip, (ULONG_PTR)branchInfo->SrcEip.Value - (ULONG_PTR)src_img->Image().Begin(), src_img->ImageName().Buffer, src_img->Is64() ? "x64" : "x86",
-							branchInfo->DstEip, (ULONG_PTR)branchInfo->DstEip.Value - (ULONG_PTR)dst_img->Image().Begin(), dst_img->ImageName().Buffer, dst_img->Is64() ? "x64" : "x86",
+							branchInfo->PrevEip, (ULONG_PTR)branchInfo->PrevEip.Value - (ULONG_PTR)src_img->Image().Begin(), src_img->ImageName().Buffer, src_img->Is64() ? "x64" : "x86",
+							branchInfo->Eip, (ULONG_PTR)branchInfo->Eip.Value - (ULONG_PTR)dst_img->Image().Begin(), dst_img->ImageName().Buffer, dst_img->Is64() ? "x64" : "x86",
 							img->ImageName().Buffer,  
 							reg[DBI_RETURN]);
+						*/
 					}
 				}
 			}
 			else
 			{
-				DbgPrint("\nLBR OFF\n");
-				KeBreak();
 				CMemoryRange* mem;
 				if (fuzz_thread->GetMemory2Watch(fuzz_thread->GetMemoryAccess().Memory.Value, sizeof(ULONG_PTR), &mem) &&
 					!mem->MatchFlags(DIRTY_FLAG))
 				{
 					mem->SetFlags(mem->GetFlags() | DIRTY_FLAG);
-					DbgPrint("\n II. round : %p %s %s\n", fuzz_thread->GetMemoryAccess().Memory, CMMU::IsValid(fuzz_thread->GetMemoryAccess().Memory.Value) ? "is valid" : "is NOT valid", CMMU::IsAccessed(fuzz_thread->GetMemoryAccess().Memory.Value) ? "is accesed already" : "NOT accesed yet!");
-					DbgPrint("\n !!!!!!!!!!!!!!! cr2 is in list .. %p %p\n", fuzz_thread->GetMemoryAccess().Memory, readcr2());
-					KeBreak();
 					CMMU::SetInvalid(fuzz_thread->GetMemoryAccess().Memory.Value, sizeof(ULONG_PTR));
-				}
-				else
-				{
-					DbgPrint("\n cr2 not in list .. %p %p\n", fuzz_thread->GetMemoryAccess().Memory, readcr2());
-					KeBreak();
 				}
 			}
 
@@ -432,7 +405,7 @@ bool CProcess2Fuzz::DbiEnumModules(
 
 		IMAGE* img = NULL;
 		if (!module->ImageBase.Value)
-			(void)m_loadedImgs.Find(CRange<void>(NULL), &img);
+			(void)m_loadedImgs.Find(CRange<void>(module->ImageBase.Value), &img);
 		else
 			(void)m_loadedImgs.GetNext(CRange<void>(module->ImageBase.Value), &img);
 
@@ -488,7 +461,7 @@ bool CProcess2Fuzz::DbiDumpMemory(
 		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 
 		CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
-		void* dst = mdl_dbg.WritePtrUser();
+		void* dst = mdl_dbg.WritePtr();
 		if (dst)
 		{
 			CEProcess eprocess(m_processId);
@@ -496,7 +469,7 @@ bool CProcess2Fuzz::DbiDumpMemory(
 			if (eprocess.IsAttached())
 			{
 				CMdl mdl_mntr(params.Src.Value, params.Size.Value);
-				const void* src = mdl_mntr.ReadPtrUser();
+				const void* src = mdl_mntr.ReadPtr();
 				if (src)
 				{
 					memcpy(dst, src, params.Size.Value);
@@ -519,7 +492,7 @@ bool CProcess2Fuzz::DbiPatchMemory(
 		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 
 		CMdl mdl_mntr(params.Src.Value, params.Size.Value);
-		const void* src = mdl_mntr.ReadPtrUser();
+		const void* src = mdl_mntr.ReadPtr();
 		if (src)
 		{
 			CEProcess eprocess(m_processId);
@@ -540,14 +513,6 @@ bool CProcess2Fuzz::DbiPatchMemory(
 }
 
 __checkReturn
-bool CProcess2Fuzz::DbiSetEip( 
-	__inout ULONG_PTR reg[REG_COUNT] 
-	)
-{
-	return false;
-}
-
-__checkReturn
 bool CProcess2Fuzz::DbiSetHook( 
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
@@ -564,19 +529,10 @@ bool CProcess2Fuzz::DbiSetHook(
 			CAutoEProcessAttach attach(eprocess);
 			if (eprocess.IsAttached())
 			{
-				img->SetUpNewRelHook(params.HookAddr.Value, m_extRoutines[ExtHook]);
-				return true;
+				return img->SetUpNewRelHook(params.HookAddr.Value, m_extRoutines[ExtHook]);
 			}
 		}
 	}
-	return false;
-}
-
-__checkReturn
-bool CProcess2Fuzz::DbiRun( 
-	__inout ULONG_PTR reg[REG_COUNT] 
-	)
-{
 	return false;
 }
 
@@ -587,7 +543,7 @@ bool CProcess2Fuzz::DbiRun(
 __checkReturn
 bool CProcess2Fuzz::Syscall( 
 	__inout ULONG_PTR reg[REG_COUNT],
-	__in_opt BRANCH_INFO* branchInfo /* = NULL */
+	__in_opt TRACE_INFO* branchInfo /* = NULL */
 	)
 {
 	ULONG_PTR ring0rsp = reg[RSP];
@@ -677,14 +633,6 @@ bool CProcess2Fuzz::Syscall(
 
 		break;
 
-	case SYSCALL_SET_EIP:
-		if (m_processId != PsGetCurrentProcessId())
-			status = DbiSetEip(reg);
-		else//ERROR
-			KeBreak();
-
-		break;
-
 	case SYSCALL_SET_HOOK:
 		if (m_processId != PsGetCurrentProcessId())
 			status = DbiSetHook(reg);
@@ -693,13 +641,6 @@ bool CProcess2Fuzz::Syscall(
 
 		break;
 
-	case SYSCALL_RUN:
-		if (m_processId != PsGetCurrentProcessId())
-			status = DbiRun(reg);
-		else//ERROR
-			KeBreak();
-
-		break;
 	default:
 		break;
 	}
@@ -709,4 +650,35 @@ bool CProcess2Fuzz::Syscall(
 		return true;
 
 	return CSYSCALL::Syscall(reg);
+}
+
+void CProcess2Fuzz::ResolveThreads()
+{
+	if (m_processId == PsGetCurrentProcessId())
+	{
+		HANDLE* thread_id = NULL;
+		m_unresolvedThreads.Find(NULL, &thread_id);
+
+		if (thread_id)
+		{
+			do
+			{
+				THREAD* thread;
+				if (m_threads.Find(*thread_id, &thread) && thread->Value)
+				{
+					CThreadEvent* thread_event = thread->Value;
+					if (thread_event->ResolveThread())
+					{
+						m_loadedImgs.Pop(CRange<void>(thread_event->GetStack().Begin(), thread_event->GetStack().End()));
+						m_unresolvedThreads.Pop(*thread_id);
+					}
+				}
+				else
+				{
+					m_unresolvedThreads.Pop(*thread_id);
+				}
+
+			} while(m_unresolvedThreads.GetNext(*thread_id, &thread_id));
+		}
+	}
 }

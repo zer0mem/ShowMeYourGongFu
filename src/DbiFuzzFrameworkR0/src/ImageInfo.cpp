@@ -30,7 +30,7 @@ CImage::CImage(
 		m_entryPoint = 0;
 	}
 
-	DbgPrint("\nImage saved at : %p ", imageInfo->ImageBase);
+	//DbgPrint("\nImage saved at : %p ", imageInfo->ImageBase);
 
 	if (fullImageName && 
 		CProcessContext<THREAD_INFO, CHILD_PROCESS, LOADED_IMAGE>::ResolveImageName(fullImageName->Buffer, 
@@ -79,8 +79,8 @@ bool CImage::SetUpNewRelHook(
 	}
 	else
 	{
-		DbgPrint("\n this is probably not image inside you want to hook ;) : %p %p %p", addrToHook, Image().Begin(), Image().End());
-		KeBreak();
+		//DbgPrint("\n this is probably not image inside you want to hook ;) : %p %p %p", addrToHook, Image().Begin(), Image().End());
+		//KeBreak();
 	}
 	return false;
 }

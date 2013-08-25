@@ -49,7 +49,7 @@ public:
 				else if (teb = PsGetThreadTeb(Id))
 					ResolveThreadLimits<NT_TIB>(reinterpret_cast<NT_TIB*>(teb));
 
-				DbgPrint("\nstack boundaries : %p %p\n", m_stack.Begin(), m_stack.End());
+				//DbgPrint("\nstack boundaries : %p %p\n", m_stack.Begin(), m_stack.End());
 				return true;
 			}
 		}
@@ -97,7 +97,6 @@ private:
 		if(PsGetProcessWow64Process(IoThreadToProcess(thread)))
 		{
 			NT_TIB* teb = reinterpret_cast<NT_TIB*>(PsGetThreadTeb(thread));
-			DbgPrint("\nTEB : %p\n", teb);
 			if (teb)
 			{
 				NT_TIB32* teb32 = reinterpret_cast<NT_TIB32*>(teb->ExceptionList);

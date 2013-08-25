@@ -25,8 +25,11 @@ public:
 	{
 		if (CMMU::IsValid(addrToHook))
 		{
-			CMdl patcher(addrToHook, size);
-			void* cold_patch = patcher.WritePtr();
+//const_cast + WritePtrUnsafe ==>> IoReadAccess isntead of IoModifyAccess ==> hook problems ... but this is wrong concept, find another solution ...
+//probably it is already locked against modify ... 
+			CMdl patcher(const_cast<const void*>(addrToHook), size);
+			void* cold_patch = patcher.WritePtrUnsafe();
+
 			if (cold_patch)
 			{
 				DbgPrint("\n CColdPatch : %p %p %x\n", addrToHook, hook, size);
@@ -45,14 +48,16 @@ public:
 	{
 		if (m_addrToHook)
 		{
-			CMdl patcher(m_addrToHook, size);
-			void* cold_patch = patcher.WritePtr();
+//const_cast + WritePtrUnsafe ==>> IoReadAccess isntead of IoModifyAccess ==> hook problems ... but this is wrong concept, find another solution ...
+//probably it is already locked against modify ... 
+			CMdl patcher(const_cast<const void*>(m_addrToHook), size);
+			void* cold_patch = patcher.WritePtrUnsafe();
 
 			ASSERT(cold_patch);
 
 			if (cold_patch)
 			{
-				DbgPrint("\n ~CColdPatch uninstall : %p\n", m_addrToHook);
+				//DbgPrint("\n ~CColdPatch uninstall : %p\n", m_addrToHook);
 				memcpy(cold_patch, m_hookOrigB, size);
 			}
 		}

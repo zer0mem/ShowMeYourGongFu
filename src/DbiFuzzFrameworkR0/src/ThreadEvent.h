@@ -18,82 +18,101 @@
 #include "Common/Constants.h"
 #include "ImageInfo.h"
 
+#include "../../Common/Kernel/Process.hpp"
+
 struct EVENT_THREAD_INFO 
 {
 	HANDLE ProcessId;
 	void* EventSemaphor;
+	void* ContextOnStack;
 	DBI_OUT_CONTEXT DbiOutContext;
 
 	EVENT_THREAD_INFO(
 		__in HANDLE processId
 		) : ProcessId(processId),
-			EventSemaphor(NULL)
+			EventSemaphor(NULL),
+			ContextOnStack(NULL)
 	{
+		RtlZeroMemory(&DbiOutContext, sizeof(DbiOutContext));
 	}
+
+	void LoadContext(
+		__in ULONG_PTR reg[REG_COUNT]
+	)
+	{
+		ProcessId = PsGetCurrentProcessId();
+		EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
+		ContextOnStack = reinterpret_cast<void*>(reg[DBI_PARAMS]);
+
+		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+	}
+
 
 	__checkReturn
-	bool SetContext(
-		__in bool is64,
+	virtual
+	bool UpdateContext(
 		__in ULONG_PTR reg[REG_COUNT],
-		__in BRANCH_INFO* branchInfo = NULL,
-		__in MEMORY_ACCESS* memInfo = NULL
-		)
-	{
-		size_t ctx_size = (is64 ? sizeof(ULONG_PTR) * (REG_X64_COUNT + 1) : sizeof(ULONG) * (REG_X86_COUNT + 1));
-		CMdl r_auto_context(reinterpret_cast<void*>(reg[DBI_PARAMS]), ctx_size);
-		void* r_context = r_auto_context.WritePtr();
-		if (r_context)
-		{
-			CRegXType regsx(is64, r_context);
+		__in const EVENT_THREAD_INFO& cthreadInfo
+		) = 0;
+};
 
-			for (size_t i = 0; i < REG_COUNT; i++)
-				DbiOutContext.GeneralPurposeContext[i] = (ULONG_PTR)regsx.GetReg(i);
+struct DBI_THREAD_EVENT :
+	public EVENT_THREAD_INFO
+{
+	DBI_THREAD_EVENT(
+		__in HANDLE processId
+		) : EVENT_THREAD_INFO(processId) 
+	{ }
 
-			DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = (ULONG_PTR)regsx.GetFLAGS();
-
-			if (branchInfo)
-				DbiOutContext.LastBranchInfo = *branchInfo;
-
-			if (memInfo)
-				DbiOutContext.MemoryInfo = *memInfo;
-			
-			ProcessId = PsGetCurrentProcessId();
-
-			EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
-			return true;
-		}
-
-		return false;
-	}
-
-	void DumpContext(
+	__checkReturn
+	bool LoadContext(
 		__in ULONG_PTR reg[REG_COUNT]
-		)
-	{
-		CMdl r_auto_context(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(DBI_OUT_CONTEXT));
-		DBI_OUT_CONTEXT* r_context = reinterpret_cast<DBI_OUT_CONTEXT*>(r_auto_context.WritePtrUser());
-		if (r_context)
-		{
-			for (size_t i = 0; i < REG_COUNT + 1; i++)
-				r_context->GeneralPurposeContext[i] = DbiOutContext.GeneralPurposeContext[i];
+		);
 
-			r_context->LastBranchInfo = DbiOutContext.LastBranchInfo;
-			r_context->MemoryInfo = DbiOutContext.MemoryInfo;
-		}
-	}
+	__checkReturn
+	virtual
+	bool UpdateContext(
+		__in ULONG_PTR reg[REG_COUNT],
+		__in const EVENT_THREAD_INFO& cthreadInfo
+		) override;
+};
+
+struct DBG_THREAD_EVENT :
+	public EVENT_THREAD_INFO
+{
+	DBG_THREAD_EVENT(
+		__in HANDLE processId
+		) : EVENT_THREAD_INFO(processId) 
+	{ }
+
+	__checkReturn
+	bool LoadContext(
+		__in ULONG_PTR reg[REG_COUNT],
+		__in bool is64
+	);
+
+	__checkReturn
+	virtual
+	bool UpdateContext(
+		__in ULONG_PTR reg[REG_COUNT],
+		__in const EVENT_THREAD_INFO& cthreadInfo
+		) override;
+
+private:
+	void* m_iret;
+	bool m_is64;
 };
 
 class CThreadEvent :
 	public THREAD_INFO
 {
-public:
-	MEMORY_INFO LastMemoryInfo;
-	ULONG_PTR GeneralPurposeContext[REG_COUNT];
-	
+public:	
 	CThreadEvent(
 		__in HANDLE threadId,
 		__in HANDLE parentProcessId
 		);
+
+	~CThreadEvent();
 
 // FUZZ MONITOR HANDLER support routines
 	__checkReturn
@@ -106,15 +125,8 @@ public:
 	bool SmartTraceEvent(
 		__in CImage* img,
 		__in ULONG_PTR reg[REG_COUNT],
-		__in const BRANCH_INFO& branchInfo
+		__in const TRACE_INFO& branchInfo
 	);
-	
-	void MemoryProtectionEvent(
-		__in void* memory,
-		__in size_t size,
-		__in bool write,
-		__in ULONG_PTR reg[REG_COUNT]
-		);
 
 	__checkReturn
 	bool SmartTrace(
@@ -131,7 +143,7 @@ public:
 		__in ULONG_PTR reg[REG_COUNT]
 		);
 
-	void SetMemoryAccess( 
+	void RegisterMemoryAccess( 
 		__in const BYTE* faultAddr,
 		__in const ERROR_CODE& access,
 		__in const void* begin,
@@ -143,10 +155,19 @@ public:
 		__in ULONG_PTR reg[REG_COUNT]
 		);
 
+	__checkReturn
+	__forceinline
+	bool ResolveThread()
+	{
+		if (!m_initialized)
+			m_initialized = m_ethread.Initialize();
+		return m_initialized;
+	}
+
 	__forceinline
 	MEMORY_ACCESS& GetMemoryAccess()
 	{
-		return m_currentThreadInfo.DbiOutContext.MemoryInfo;
+		return m_dbgThreadInfo.DbiOutContext.MemoryInfo;
 	}
 
 	__forceinline
@@ -180,10 +201,7 @@ public:
 		)
 	{
 		return m_mem2watch.Find(CMemoryRange(reinterpret_cast<const BYTE*>(addr), size), mem);
-
 	}
-
-	void insert_tmp(CMemoryRange& mem) {m_mem2watch.Push(mem);}
 
 protected:
 	__checkReturn 
@@ -191,32 +209,9 @@ protected:
 		__in const EVENT_THREAD_INFO& eventThreadInfo
 		);
 
-	void SetIret(
-		__in bool is64,
-		__inout void* iretAddr,
-		__in const void* iret,
-		__in ULONG_PTR segSel,
-		__in ULONG_PTR flags
-		);
-
-private:
-	template<class TYPE>
-	__forceinline
-	void SetIret(
-		__inout TYPE* iret,
-		__in const void* ret,
-		__in ULONG_PTR segSel,
-		__in ULONG_PTR flags
-		)
-	{
-		iret[IReturn] = (TYPE)(ret);
-		iret[ICodeSegment] = (TYPE)(segSel);
-		iret[IFlags] = (TYPE)(flags);
-	}
-
 protected:
-	EVENT_THREAD_INFO m_monitorThreadInfo;
-	EVENT_THREAD_INFO m_currentThreadInfo;
+	DBI_THREAD_EVENT m_dbiThreadInfo;
+	DBG_THREAD_EVENT m_dbgThreadInfo;
 
 	bool m_initialized;
 	CLockedAVL<CMemoryRange> m_mem2watch;
@@ -233,22 +228,28 @@ bool ReadParamBuffer(
 	__inout TYPE* paramsBuff
 	)
 {
-	if (sizeof(TYPE) <= sizeof(reg[DBI_PARAMS]))
+	CMdl mdl(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(TYPE));
+	const TYPE* params_buff = reinterpret_cast<const TYPE*>(mdl.ReadPtrUser());
+	if (params_buff)
 	{
-		*paramsBuff = *reinterpret_cast<TYPE*>(&reg[DBI_PARAMS]);
+		*paramsBuff = *params_buff;
 		return true;
-	}
-	else
-	{
-		CMdl mdl(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(TYPE));
-		const TYPE* params_buff = reinterpret_cast<const TYPE*>(mdl.ReadPtrUser());
-		if (params_buff)
-		{
-			*paramsBuff = *params_buff;
-			return true;
-		}
 	}
 	return false;
 };
+
+template<class TYPE>
+__forceinline
+void SetIret(
+	__inout TYPE* iret,
+	__in const void* ret,
+	__in ULONG_PTR segSel,
+	__in ULONG_PTR flags
+	)
+{
+	iret[IReturn] = (TYPE)(ret);
+	iret[ICodeSegment] = (TYPE)(segSel);
+	iret[IFlags] = (TYPE)(flags);
+}
 
 #endif //__THREADEVENT_H__

@@ -117,9 +117,9 @@ enum RegFastCallX64Volatile
 	VOLATILE_REG_COUNT
 };
 
-#define HOOK_ORIG_RSP(reg) ((ULONG_PTR*)(reg[RSP]) + 2)//ENTER_HOOK_PROLOGUE + pushf
+#define HOOK_ORIG_RSP(reg) (reinterpret_cast<ULONG_PTR*>(reg[RSP]) + 2)//ENTER_HOOK_PROLOGUE + pushf
 //compiler will handle this by optimalization
-#define PPARAM(reg, num) (ULONG_PTR*)((num && num <= VOLATILE_REG_COUNT) ? (num < VOLATILE_REG_R8 ? &reg[RCX + num - 1 - VOLATILE_REG_RCX] : &reg[R8 + num - 1 - VOLATILE_REG_R8]) : (HOOK_ORIG_RSP(reg) + num))
+#define PPARAM(reg, num) reinterpret_cast<ULONG_PTR*>((num && num <= VOLATILE_REG_COUNT) ? (num < VOLATILE_REG_R8 ? &reg[RCX + num - 1 - VOLATILE_REG_RCX] : &reg[R8 + num - 1 - VOLATILE_REG_R8]) : (HOOK_ORIG_RSP(reg) + num))
 #define PRETURN(reg) HOOK_ORIG_RSP(reg)
 
 

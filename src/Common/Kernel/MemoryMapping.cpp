@@ -5,6 +5,7 @@
 
 #include "StdAfx.h"
 #include "MemoryMapping.h"
+#include "MMU.hpp"
 
 //************* virtual to virtual *************
 
@@ -13,10 +14,9 @@ CMdl::CMdl(
 	__in void* virtualAddress, 
 	__in size_t size
 	) : m_locked(false),
-		m_mem(NULL),
-		m_mdl(NULL)
+		m_mem(NULL)
 {
-	m_lockOperation = IoWriteAccess;
+	m_lockOperation = IoModifyAccess;
 	m_mdl = IoAllocateMdl(virtualAddress, (ULONG)size, FALSE, FALSE, NULL);
 }
 
@@ -24,8 +24,7 @@ CMdl::CMdl(
 	__in const void* virtualAddress, 
 	__in size_t size 
 	) : m_locked(false),
-		m_mem(NULL),
-		m_mdl(NULL)
+		m_mem(NULL)
 {
 	m_lockOperation = IoReadAccess;
 	m_mdl = IoAllocateMdl(const_cast<void*>(virtualAddress), (ULONG)size, FALSE, FALSE, NULL);
@@ -37,9 +36,11 @@ CMdl::~CMdl()
 	if (m_mdl)
 	{
 		if (m_locked)
+		{
 			MmUnlockPages(m_mdl);
+			m_locked = false;
+		}
 
-		//call also CMdl::Unmap() ?
 		IoFreeMdl(m_mdl);
 	}
 }
@@ -47,21 +48,23 @@ CMdl::~CMdl()
 //Callers of MmProbeAndLockPages must be running at IRQL <= APC_LEVEL for pageable addresses, or at IRQL <= DISPATCH_LEVEL for nonpageable addresses.
 _IRQL_requires_max_(APC_LEVEL)
 __checkReturn
-bool CMdl::Lock()
+bool CMdl::Lock(
+	__in bool user
+	)
 {
-	if (!m_mdl)
-		return false;
-
-	__try 
+	if (!m_locked)
 	{
-		MmProbeAndLockPages(m_mdl, KernelMode, m_lockOperation);
-		m_locked = true;
+		__try 
+		{
+			MmProbeAndLockPages(m_mdl, user ? UserMode : KernelMode, m_lockOperation);
+			m_locked = true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			//DbgPrint("\n LOCK ERROR\n");
+		}
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		return false;
-	}
-	return true;
+	return m_locked;
 }
 
 //If AccessMode is UserMode, the caller must be running at IRQL <= APC_LEVEL. If AccessMode is KernelMode, the caller must be running at IRQL <= DISPATCH_LEVEL.
@@ -80,9 +83,21 @@ void* CMdl::WritePtr(
 	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached */
 	)
 {
-	if (m_lockOperation == IoWriteAccess)
+	return Map(cacheType, false);
+//hook problems ... but this is wrong concept, find another solution ...
+	if (m_lockOperation == IoModifyAccess)
 		return Map(cacheType, false);
 	return NULL;
+}
+
+_IRQL_requires_max_(APC_LEVEL)
+__checkReturn
+void* CMdl::WritePtrUnsafe( 
+	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached */
+	)
+{
+	//wrong concept ... yused in colpatcher ...
+	return Map(cacheType, false);
 }
 
 _IRQL_requires_max_(APC_LEVEL)
@@ -99,7 +114,7 @@ void* CMdl::WritePtrUser(
 	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached */ 
 	)
 {
-	if (m_lockOperation == IoWriteAccess)
+	if (m_lockOperation == IoModifyAccess)
 		return Map(cacheType, true);
 	return NULL;
 }
@@ -109,7 +124,7 @@ void* CMdl::WritePtrUser(
 _IRQL_requires_max_(APC_LEVEL)
 void CMdl::Unmap()
 {
-	if (m_mem && m_mdl)
+	if (m_mem && m_mdl && !m_locked)
 	{
 		MmUnmapLockedPages(m_mem, m_mdl);
 		m_mem = NULL;
@@ -121,25 +136,20 @@ void* CMdl::Map(
 	__in bool user
 	)
 {
-
-	if (!m_mdl)//mdl fail
-		return NULL;
-
-	if (!m_locked && !Lock())
-		return NULL;
-
-	if (m_mem)//need to unmap first
-		return NULL;
-
-	__try 
+	if (m_mdl && !m_mem)
 	{
-		m_mem = MmMapLockedPagesSpecifyCache(m_mdl, user ? UserMode : KernelMode, cacheType, NULL, FALSE, user ? NormalPagePriority : HighPagePriority);
+		if (Lock(user))
+		{
+			__try 
+			{
+				m_mem = MmMapLockedPagesSpecifyCache(m_mdl, user ? UserMode : KernelMode, cacheType, NULL, FALSE, NormalPagePriority);
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				//DbgPrint("\nMAP ERROR\n");
+			}
+		}
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		DbgPrint("\n LOCK exception occured\n");
-	}
-
 	return m_mem;
 }
 

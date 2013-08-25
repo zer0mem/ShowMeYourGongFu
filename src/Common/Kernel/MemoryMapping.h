@@ -29,10 +29,6 @@ public:
 
 	_IRQL_requires_max_(APC_LEVEL)
 	__checkReturn
-	bool Lock();
-
-	_IRQL_requires_max_(APC_LEVEL)
-	__checkReturn
 	const void* ReadPtr(
 		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
 		);
@@ -40,6 +36,11 @@ public:
 	_IRQL_requires_max_(APC_LEVEL)
 	__checkReturn
 	void* WritePtr(
+		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
+		);
+	_IRQL_requires_max_(APC_LEVEL)
+	__checkReturn
+	void* WritePtrUnsafe(
 		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
 		);
 
@@ -55,13 +56,19 @@ public:
 		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
 		);
 
-	void Unmap();
-
 protected:
+	_IRQL_requires_max_(APC_LEVEL)
+	__checkReturn
+	bool Lock(
+		__in bool user
+		);
+
 	void* Map(
 		__in_opt MEMORY_CACHING_TYPE cacheType,
 		__in bool user
 		);
+
+	void Unmap();
 
 protected:
 	MDL* m_mdl;

@@ -23,14 +23,14 @@ CThreadEvent::CThreadEvent(
 	__in HANDLE threadId, 
 	__in HANDLE parentProcessId
 	) : THREAD_INFO(threadId, parentProcessId),
-		m_currentThreadInfo(PsGetCurrentProcessId()),
-		m_monitorThreadInfo(parentProcessId),
+		m_dbgThreadInfo(PsGetCurrentProcessId()),
+		m_dbiThreadInfo(parentProcessId),
 		m_ethread(threadId),
 		m_initialized(false)
 {
 }
 
-void CThreadEvent::SetMemoryAccess( 
+void CThreadEvent::RegisterMemoryAccess( 
 	__in const BYTE* faultAddr,
 	__in const ERROR_CODE& access,
 	__in const void* begin,
@@ -39,19 +39,27 @@ void CThreadEvent::SetMemoryAccess(
 
 	)
 {
-	m_currentThreadInfo.DbiOutContext.MemoryInfo.Memory.Value = faultAddr;
-	m_currentThreadInfo.DbiOutContext.MemoryInfo.Access.Value = access;
-	m_currentThreadInfo.DbiOutContext.MemoryInfo.Begin.Value = begin;
-	m_currentThreadInfo.DbiOutContext.MemoryInfo.Size.Value = size;
-	m_currentThreadInfo.DbiOutContext.MemoryInfo.Flags.Value = (ULONG)flags;
-	
-	m_currentThreadInfo.DbiOutContext.MemoryInfo.OriginalValue.Value = 0;
-	if (access.WriteAccess)
+	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Memory.Value = faultAddr;
+	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Access.Value = access;
+	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Begin.Value = begin;
+	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Size.Value = size;
+	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Flags.Value = (ULONG)flags;
+
+	if (CMMU::IsAccessed(faultAddr))
 	{
-		CMdl mdl(faultAddr, sizeof(ULONG_PTR));
-		const ULONG_PTR* val = reinterpret_cast<const ULONG_PTR*>(mdl.ReadPtr());
-		if (val)
-			m_currentThreadInfo.DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
+		CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));
+
+		if (access.WriteAccess)
+		{
+			CMdl mdl(faultAddr, sizeof(ULONG_PTR));
+			const ULONG_PTR* val = reinterpret_cast<const ULONG_PTR*>(mdl.ReadPtr());
+			if (val)
+				m_dbgThreadInfo.DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
+		}
+	}
+	else
+	{
+		m_dbgThreadInfo.DbiOutContext.MemoryInfo.OriginalValue.Value = 0;
 	}
 }
 
@@ -73,34 +81,11 @@ bool CThreadEvent::FlipSemaphore(
 			CMdl event_semaphor(eventThreadInfo.EventSemaphor, sizeof(BYTE));
 			volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.WritePtr());
 			if (semaphor)
-			{
 				return (0 == InterlockedExchange8(semaphor, 1));
-			}
 		}
 	}
 	return false;
 }
-
-void CThreadEvent::SetIret( 
-	__in bool is64, 
-	__inout void* iretAddr, 
-	__in const void* iret, 
-	__in ULONG_PTR segSel, 
-	__in ULONG_PTR flags 
-	)
-{
-	size_t iret_size = IRetCount * (is64 ? sizeof(ULONG_PTR) : sizeof(ULONG));
-	CMdl r_auto_context(reinterpret_cast<void*>(iretAddr), iret_size);
-	void* iret_ctx = r_auto_context.WritePtr();
-	if (iret_ctx)
-	{
-		if (is64)
-			SetIret<ULONG_PTR>(reinterpret_cast<ULONG_PTR*>(iret_ctx), iret, segSel, flags);
-		else
-			SetIret<ULONG>(reinterpret_cast<ULONG*>(iret_ctx), iret, segSel, flags);
-	}
-}
-
 
 //----------------------------------------------------------------------
 // ****************** MONITOR DLL INJECTED DBI HELPER ******************
@@ -112,37 +97,23 @@ bool CThreadEvent::HookEvent(
 	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	PFIRET* iret = PPAGE_FAULT_IRET(reg);
-	void* ret = reinterpret_cast<void*>(reg[DBI_RETURN] - SIZE_REL_CALL);
-	DbgPrint("\n\ncheck hook : %p\n\n", ret);
-	
+	void* ret = reinterpret_cast<void*>(reg[DBI_RETURN] - SIZE_REL_CALL);	
 	if (img->IsHooked(ret))
-	{
 		img->UninstallHook(ret);
-		DbgPrint("\nunhooked! %p\n", ret);
-	}
 
-	BRANCH_INFO branch;
-	branch.SrcEip.Value = ret;
-	branch.DstEip.Value = ret;
-	if (m_currentThreadInfo.SetContext(img->Is64(), reg, &branch))
+	m_dbgThreadInfo.DbiOutContext.TraceInfo.PrevEip.Value = ret;
+	m_dbgThreadInfo.DbiOutContext.TraceInfo.Eip.Value = ret;
+	m_dbgThreadInfo.DbiOutContext.TraceInfo.StackPtr.Value = HOOK_ORIG_RSP(reg);
+	m_dbgThreadInfo.DbiOutContext.TraceInfo.Flags.Value = PPAGE_FAULT_IRET(reg)->Flags;//not correct -> correct map DBI_PARAMS and get pushf
+
+	if (m_dbgThreadInfo.LoadContext(reg, img->Is64()))
 	{
-		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-		
-		SetIret(img->Is64(), reinterpret_cast<void*>(reg[DBI_IRET]), ret, iret->CodeSegment, m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS] | TRAP);
-
-		DbgPrint("\n 1. EventCallback <SYSCALL_MAIN> : [%ws -> %p] <- %p [%p] %x\n", img->ImageName().Buffer, ret, reg[DBI_R3TELEPORT], reg, m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS]);
-
-		if (!FlipSemaphore(m_monitorThreadInfo))
-		{
-			DbgPrint("\nUnFlipped semaphore ...\n");
-		}
-
+		//(void) because of init is called after main ep hook ..
+		(void)m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
+		(void)FlipSemaphore(m_dbiThreadInfo);
 		return true;
 	}
 
-	KeBreak();
-	DbgPrint("\nEROOR\n");
 	return false;
 }
 
@@ -150,30 +121,19 @@ __checkReturn
 bool CThreadEvent::SmartTraceEvent( 
 	__in CImage* img, 
 	__in ULONG_PTR reg[REG_COUNT], 
-	__in const BRANCH_INFO& branchInfo
+	__in const TRACE_INFO& branchInfo
 	)
 {
-	PFIRET* iret = PPAGE_FAULT_IRET(reg);
+	m_dbgThreadInfo.DbiOutContext.TraceInfo = branchInfo;
 
-	BRANCH_INFO branch = branchInfo;
-	KeBreak();
-	if (m_currentThreadInfo.SetContext(img->Is64(), reg, &branch))
-	{
-		m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = branch.Flags.Value;
-		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-
-		SetIret(img->Is64(), reinterpret_cast<void*>(reg[DBI_IRET]), branch.DstEip.Value, iret->CodeSegment, branch.Flags.Value);
-	
-		if (!FlipSemaphore(m_monitorThreadInfo))
+	if (m_dbgThreadInfo.LoadContext(reg, img->Is64()))
+		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
+			//return FlipSemaphore(m_dbiThreadInfo);//codecoverme.exe ohack
 		{
-			DbgPrint("\nUnFlipped semaphore ...\n");
+			FlipSemaphore(m_dbiThreadInfo);
+			return true;
 		}
 
-		return true;
-	}
-
-	KeBreak();
-	DbgPrint("\nEROOR\n");
 	return false;
 }
 
@@ -182,45 +142,28 @@ bool CThreadEvent::SmartTraceEvent(
 // ****************** MONITOR DLL DBI API ******************
 //----------------------------------------------------------
 
-//invoked from monitor
-__checkReturn
-bool CThreadEvent::SmartTrace( 
-	__in ULONG_PTR reg[REG_COUNT]
-)
-{
-	PFIRET* iret = PPAGE_FAULT_IRET(reg);
-	m_monitorThreadInfo.ProcessId = PsGetCurrentProcessId();
-	m_monitorThreadInfo.EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
-
-	m_currentThreadInfo.DumpContext(reg);
-
-	iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-
-	bool dbg_cont = FlipSemaphore(m_currentThreadInfo);
-	if (!dbg_cont)
-		KeBreak();
-	return true;
-}
-
-void CThreadEvent::MemoryProtectionEvent( 
-	__in void* memory, 
-	__in size_t size, 
-	__in bool write, 
-	__in ULONG_PTR reg[REG_COUNT] 
-	)
-{
-}
-
 bool CThreadEvent::Init( 
 	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	if (!m_initialized)
-		m_initialized = m_ethread.Initialize();
-
-	m_currentThreadInfo.DumpContext(reg);
+	reinterpret_cast<EVENT_THREAD_INFO&>(m_dbiThreadInfo).LoadContext(reg);
+	m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
 	PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+
 	return m_initialized;
+}
+
+//invoked from monitor
+__checkReturn
+bool CThreadEvent::SmartTrace( 
+	__in ULONG_PTR reg[REG_COUNT]
+	)
+{
+	if (m_dbiThreadInfo.LoadContext(reg))
+		if (m_dbgThreadInfo.UpdateContext(reg, m_dbiThreadInfo))
+			return FlipSemaphore(m_dbgThreadInfo);
+
+	return false;
 }
 
 __checkReturn
@@ -228,8 +171,6 @@ bool CThreadEvent::EnumMemory(
 	__in ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	PFIRET* iret = PPAGE_FAULT_IRET(reg);
-
 	CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MEMORY_ENUM));
 	MEMORY_ENUM* mem = reinterpret_cast<MEMORY_ENUM*>(auto_mem.WritePtrUser());
 	if (mem)
@@ -243,7 +184,7 @@ bool CThreadEvent::EnumMemory(
 			mem->Flags.Value = vad_mem.GetFlags().UFlags;
 		}
 
-		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 		return true;
 	}
 
@@ -275,6 +216,139 @@ bool CThreadEvent::WatchMemoryAccess(
 			}
 		}
 		return true;
+	}
+	return false;
+}
+
+CThreadEvent::~CThreadEvent()
+{
+	CMemoryRange* mem = NULL;
+	m_mem2watch.Find(CMemoryRange(NULL, 1), &mem);
+	if (mem)
+	{
+		do
+		{
+			CMMU::SetValid(mem->Begin(), mem->GetSize());
+		} while(m_mem2watch.GetNext(*mem, &mem));
+	}
+}
+
+__checkReturn
+bool DBI_THREAD_EVENT::LoadContext( 
+	__in ULONG_PTR reg[REG_COUNT]
+	)
+{
+	EVENT_THREAD_INFO::LoadContext(reg);
+
+	//load to dbioutcontext var
+	CMdl r_auto_context(ContextOnStack, sizeof(DbiOutContext));
+	const DBI_OUT_CONTEXT* dbi_out_context = reinterpret_cast<const DBI_OUT_CONTEXT*>(r_auto_context.ReadPtrUser());
+	if (dbi_out_context)
+	{
+		DbiOutContext = *dbi_out_context;
+		return true;
+	}
+
+	return false;
+}
+
+__checkReturn
+bool DBI_THREAD_EVENT::UpdateContext( 
+	__in ULONG_PTR reg[REG_COUNT], 
+	__in const EVENT_THREAD_INFO& cthreadInfo 
+	)
+{
+	CEProcess eprocess(ProcessId);
+	CAutoEProcessAttach attach2process(eprocess);
+	if (eprocess.IsAttached())
+	{
+		CMdl dbi_auto_context(ContextOnStack, sizeof(cthreadInfo.DbiOutContext));
+		DBI_OUT_CONTEXT* dbi_context = reinterpret_cast<DBI_OUT_CONTEXT*>(dbi_auto_context.WritePtrUser());
+		if (dbi_context)
+		{
+			*dbi_context = cthreadInfo.DbiOutContext;
+
+			if (dbi_context->TraceInfo.PrevEip.Value == dbi_context->TraceInfo.Eip.Value)
+				dbi_context->TraceInfo.Reason.Value = Hook;
+			else if (dbi_context->TraceInfo.PrevEip.Value == MM_LOWEST_USER_ADDRESS)
+				dbi_context->TraceInfo.Reason.Value = MemoryAcces;
+			else
+				dbi_context->TraceInfo.Reason.Value = BranchTraceFlag;
+
+			return true;
+		}
+	}
+	return true;//codecoverme.exe ohack
+	return false;
+}
+
+__checkReturn
+bool DBG_THREAD_EVENT::LoadContext( 
+	__in ULONG_PTR reg[REG_COUNT],
+	__in bool is64
+	)
+{
+	m_is64 = is64;
+	m_iret = reinterpret_cast<void*>(reg[DBI_IRET]);
+	EVENT_THREAD_INFO::LoadContext(reg);
+
+	CMdl reg_auto_context(ContextOnStack, sizeof(DbiOutContext.GeneralPurposeContext));
+	const void* reg_context = reg_auto_context.ReadPtr();
+	if (reg_context)
+	{
+		//use just for read!
+		CRegXType regs(m_is64, const_cast<void*>(reg_context));
+
+		for (size_t i = 0; i < REG_COUNT; i++)
+			DbiOutContext.GeneralPurposeContext[i] = regs.GetReg(i);
+
+		DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = regs.GetFLAGS();
+
+		return true;
+	}
+	return false;
+}
+
+__checkReturn
+bool DBG_THREAD_EVENT::UpdateContext( 
+	__in ULONG_PTR reg[REG_COUNT], 
+	__in const EVENT_THREAD_INFO& cthreadInfo 
+	)
+{
+	CEProcess eprocess(ProcessId);
+	CAutoEProcessAttach attach2process(eprocess);
+	if (eprocess.IsAttached())
+	{
+		CMdl reg_auto_context(ContextOnStack, sizeof(DbiOutContext.GeneralPurposeContext));
+		void* reg_context = reg_auto_context.WritePtr();
+		if (reg_context)
+		{
+			CRegXType regs(m_is64, reg_context);
+
+			for (size_t i = 0; i < REG_COUNT; i++)
+				regs.SetReg(i, cthreadInfo.DbiOutContext.GeneralPurposeContext[i]);
+
+			regs.SetFLAGS(cthreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS]);
+
+
+			CMdl r_auto_context(reinterpret_cast<void*>(m_iret), IRetCount * sizeof(ULONG_PTR));
+			void* iret_ctx = r_auto_context.WritePtr();
+			if (iret_ctx)
+			{
+				if (m_is64)
+					SetIret<ULONG_PTR>(reinterpret_cast<ULONG_PTR*>(iret_ctx), 
+						cthreadInfo.DbiOutContext.TraceInfo.Eip.Value, 
+						PPAGE_FAULT_IRET(reg)->CodeSegment, 
+						cthreadInfo.DbiOutContext.TraceInfo.Flags.Value);
+				else
+					SetIret<ULONG>(reinterpret_cast<ULONG*>(iret_ctx), 
+						cthreadInfo.DbiOutContext.TraceInfo.Eip.Value, 
+						PPAGE_FAULT_IRET(reg)->CodeSegment, 
+						cthreadInfo.DbiOutContext.TraceInfo.Flags.Value);
+			}
+
+			return true;
+		}
 	}
 	return false;
 }

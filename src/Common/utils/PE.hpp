@@ -158,8 +158,8 @@ private:
 	__checkReturn
 	static 
 	const void* GetProcAddress(
-		__in const const void* funcId,
-		__in const const void* base,
+		__in const void* funcId,
+		__in const void* base,
 		__in const IMAGE_DATA_DIRECTORY* imgDir,
 		__in const IMAGE_EXPORT_DIRECTORY* export_dir
 		)
@@ -197,8 +197,6 @@ private:
 			{
 				const char* func_name = MEMBER(const char, export_dir, names_table[i] - imgDir[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
 				int cmp = strcmp(reinterpret_cast<const char*>(funcId), func_name);
-
-				DbgPrint("\nbin search at %i (%s)\n", i, func_name);
 
 				if (cmp < 0)
 					max = i;

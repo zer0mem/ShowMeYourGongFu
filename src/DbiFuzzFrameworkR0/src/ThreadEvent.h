@@ -40,8 +40,8 @@ struct EVENT_THREAD_INFO
 		)
 	{
 		size_t ctx_size = (is64 ? sizeof(ULONG_PTR) * (REG_X64_COUNT + 1) : sizeof(ULONG) * (REG_X86_COUNT + 1));
-		CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_PARAMS]), ctx_size);
-		void* r_context = r_auto_context.Map();
+		CMdl r_auto_context(reinterpret_cast<void*>(reg[DBI_PARAMS]), ctx_size);
+		void* r_context = r_auto_context.WritePtr();
 		if (r_context)
 		{
 			CRegXType regsx(is64, r_context);
@@ -70,8 +70,8 @@ struct EVENT_THREAD_INFO
 		__in ULONG_PTR reg[REG_COUNT]
 		)
 	{
-		CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_PARAMS]), sizeof(DBI_OUT_CONTEXT));
-		DBI_OUT_CONTEXT* r_context = reinterpret_cast<DBI_OUT_CONTEXT*>(r_auto_context.Map());
+		CMdl r_auto_context(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(DBI_OUT_CONTEXT));
+		DBI_OUT_CONTEXT* r_context = reinterpret_cast<DBI_OUT_CONTEXT*>(r_auto_context.WritePtrUser());
 		if (r_context)
 		{
 			for (size_t i = 0; i < REG_COUNT + 1; i++)
@@ -241,7 +241,7 @@ bool ReadParamBuffer(
 	else
 	{
 		CMdl mdl(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(TYPE));
-		TYPE* params_buff = reinterpret_cast<TYPE*>(mdl.Map());
+		const TYPE* params_buff = reinterpret_cast<const TYPE*>(mdl.ReadPtrUser());
 		if (params_buff)
 		{
 			*paramsBuff = *params_buff;

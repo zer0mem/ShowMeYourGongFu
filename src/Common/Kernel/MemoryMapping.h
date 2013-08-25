@@ -16,28 +16,59 @@ class CMdl
 {
 public:
 	CMdl(
+		__in void* virtualAddress, 
+		__in size_t size
+		);
+
+	CMdl(
 		__in const void* virtualAddress, 
 		__in size_t size
 		);
+
 	~CMdl();
 
-	__checkReturn bool Lock(
-		__in_opt LOCK_OPERATION operation = IoReadAccess
-		);
+	_IRQL_requires_max_(APC_LEVEL)
+	__checkReturn
+	bool Lock();
 
-	void* Map(
+	_IRQL_requires_max_(APC_LEVEL)
+	__checkReturn
+	const void* ReadPtr(
 		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
 		);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	__checkReturn
+	void* WritePtr(
+		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
+		);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	__checkReturn
+	const void* ReadPtrUser(
+		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
+		);
+
+	_IRQL_requires_max_(APC_LEVEL)
+	__checkReturn
+	void* WritePtrUser(
+		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
+		);
+
 	void Unmap();
-	
-	//getter
-	void* GetMappedVirtualAddress();
+
+protected:
+	void* Map(
+		__in_opt MEMORY_CACHING_TYPE cacheType,
+		__in bool user
+		);
 
 protected:
 	MDL* m_mdl;
 	void* m_mem;
 	bool m_locked;
-	CDispatchLvl m_DispatchIRQL;
+	LOCK_OPERATION  m_lockOperation;
+	CApcLvl m_apcIRQL;
 };
 
 class CMmMap

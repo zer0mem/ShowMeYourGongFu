@@ -37,7 +37,7 @@ public:
 	}
 
 	void InitBase( 
-		__in void* base 
+		__in const void* base 
 		)
 	{
 		if (!IsInitialized())

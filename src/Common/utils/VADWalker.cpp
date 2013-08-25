@@ -159,7 +159,7 @@ bool CVadScanner::GetNextVadMemoryRange(
 		if (auto_vad.GetFakeVadShort(&mem_find))
 		{
 			VAD_SHORT* mem_descryptor = NULL;
-			if (vad.Find(mem_find, &mem_descryptor))
+			if (vad.Find(mem_find, &mem_descryptor))//== get lowerbound if addr = 0...
 				if (!vad.GetNext(const_cast<const VAD_SHORT**>(&mem_descryptor)))
 					return false;
 

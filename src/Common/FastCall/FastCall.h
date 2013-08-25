@@ -53,7 +53,7 @@ enum
 
 #define DBI_FLAGS REG_COUNT
 
-#define SIZEOF_DBI_FASTCALL 3 //mov eax, [ebp]
+#define SIZEOF_DBI_FASTCALL 2 //mov eax, [ecx]
 
 enum EnumSYSENTER
 {
@@ -124,6 +124,7 @@ struct MODULE_ENUM
 {
 	TYPE_X86COMPATIBLE<const void*> ImageBase;
 	TYPE_X86COMPATIBLE<size_t> ImageSize;
+	TYPE_X86COMPATIBLE<bool> Is64;
 	TYPE_X86COMPATIBLE<WCHAR[0x100]> ImageName;
 };
 

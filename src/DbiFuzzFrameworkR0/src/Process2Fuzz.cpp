@@ -161,7 +161,7 @@ bool CProcess2Fuzz::PageFault(
 //HACKY PART OF PAGEFAULT >>> should be moved to more appropriate place ...
 
 //X86 specific ...
-	if (FAST_CALL == reg[DBI_IOCALL])
+	if (FAST_CALL == reg[DBI_IOCALL] && FAST_CALL == (ULONG_PTR)faultAddr)
 	{
 		//additional check if it is communication from r3 dbi-monitor
 		if ((ULONG_PTR)iret->Return + SIZEOF_DBI_FASTCALL == reg[DBI_R3TELEPORT])
@@ -336,7 +336,7 @@ bool CProcess2Fuzz::DbiEnumThreads(
 	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 
 	CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(CID_ENUM));
-	CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.Map());
+	CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.WritePtrUser());
 	if (cid)
 	{
 		THREAD* thread = NULL;
@@ -425,7 +425,7 @@ bool CProcess2Fuzz::DbiEnumModules(
 	)
 {
 	CMdl auto_module(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MODULE_ENUM));
-	MODULE_ENUM* module = reinterpret_cast<MODULE_ENUM*>(auto_module.Map());
+	MODULE_ENUM* module = reinterpret_cast<MODULE_ENUM*>(auto_module.WritePtrUser());
 	if (module)
 	{
 		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
@@ -440,6 +440,7 @@ bool CProcess2Fuzz::DbiEnumModules(
 		{
 			module->ImageBase.Value = img->Value->Image().Begin();
 			module->ImageSize.Value = img->Value->Image().GetSize();
+			module->Is64.Value = img->Value->Is64();
 			RtlZeroMemory(&module->ImageName.Value, sizeof(module->ImageName.Value));
 			if (img->Value->ImageName().Length < sizeof(module->ImageName.Value))
 				memcpy(&module->ImageName.Value, img->Value->ImageName().Buffer, img->Value->ImageName().Length);
@@ -455,8 +456,8 @@ bool CProcess2Fuzz::DbiGetProcAddress(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	CMdl auto_api_param(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MODULE_ENUM));
-	PARAM_API* api_param = reinterpret_cast<PARAM_API*>(auto_api_param.Map());
+	CMdl auto_api_param(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(PARAM_API));
+	PARAM_API* api_param = reinterpret_cast<PARAM_API*>(auto_api_param.WritePtr());
 	if (api_param)
 	{
 		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
@@ -468,25 +469,8 @@ bool CProcess2Fuzz::DbiGetProcAddress(
 			CAutoEProcessAttach attach(eprocess);
 			if (eprocess.IsAttached())
 			{
-				CMdl image_map(img->Image().Begin(), img->Image().GetSize());
-				const void* img_base = image_map.Map();
-				if (img_base)
-				{
-					CPE mz(img_base);
-					if (mz.IsValid())
-					{
-						void* func_addr = mz.GetProcAddress(api_param->ApiName.Value);
-						if (func_addr)
-						{
-							api_param->ApiAddr.Value = func_addr;
-							return true;
-						}
-					}
-				}
-				else
-				{
-					KeBreak();
-				}
+				api_param->ApiAddr.Value = CPE::GetProcAddressSafe(api_param->ApiName.Value, img->Image().Begin());
+				return true;
 			}
 		}
 	}
@@ -504,7 +488,7 @@ bool CProcess2Fuzz::DbiDumpMemory(
 		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 
 		CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
-		void* dst = mdl_dbg.Map();
+		void* dst = mdl_dbg.WritePtrUser();
 		if (dst)
 		{
 			CEProcess eprocess(m_processId);
@@ -512,10 +496,10 @@ bool CProcess2Fuzz::DbiDumpMemory(
 			if (eprocess.IsAttached())
 			{
 				CMdl mdl_mntr(params.Src.Value, params.Size.Value);
-				void* src = mdl_mntr.Map();
+				const void* src = mdl_mntr.ReadPtrUser();
 				if (src)
 				{
-					memcpy(dst, src,params.Size.Value);
+					memcpy(dst, src, params.Size.Value);
 					return true;
 				}
 			}
@@ -535,7 +519,7 @@ bool CProcess2Fuzz::DbiPatchMemory(
 		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 
 		CMdl mdl_mntr(params.Src.Value, params.Size.Value);
-		void* src = mdl_mntr.Map();
+		const void* src = mdl_mntr.ReadPtrUser();
 		if (src)
 		{
 			CEProcess eprocess(m_processId);
@@ -543,7 +527,7 @@ bool CProcess2Fuzz::DbiPatchMemory(
 			if (eprocess.IsAttached())
 			{
 				CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
-				void* dst = mdl_dbg.Map();
+				void* dst = mdl_dbg.WritePtr();
 				if (dst)
 				{
 					memcpy(dst, src, params.Size.Value);
@@ -595,7 +579,6 @@ bool CProcess2Fuzz::DbiRun(
 {
 	return false;
 }
-
 
 //-----------------------------------------------------------------
 // ****************** DBI FASTCALL COMMUNICATION ******************

@@ -30,6 +30,8 @@ CImage::CImage(
 		m_entryPoint = 0;
 	}
 
+	DbgPrint("\nImage saved at : %p ", imageInfo->ImageBase);
+
 	if (fullImageName && 
 		CProcessContext<THREAD_INFO, CHILD_PROCESS, LOADED_IMAGE>::ResolveImageName(fullImageName->Buffer, 
 			fullImageName->Length / sizeof(fullImageName->Buffer[0]), 

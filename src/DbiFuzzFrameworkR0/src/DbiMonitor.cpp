@@ -115,9 +115,8 @@ void CDbiMonitor::PerCoreAction(
 		sidt(&idtr);
 
 		{
-			CApcLvl irql;
-			CMdl mdl((void*)idtr.base, IDT_SIZE);
-			GATE_DESCRIPTOR* idt = (GATE_DESCRIPTOR*)mdl.Map();
+			CMdl mdl(reinterpret_cast<void*>(idtr.base), IDT_SIZE);
+			GATE_DESCRIPTOR* idt = reinterpret_cast<GATE_DESCRIPTOR*>(mdl.WritePtr());
 			if (idt)
 			{
 				PageFaultHandlerPtr[coreId] = reinterpret_cast<void*>(

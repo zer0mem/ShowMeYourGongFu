@@ -73,7 +73,7 @@ public:
 		__inout const TYPE** node
 		)
 	{
-		if (node)
+		if (node && *node)
 		{
 			const TYPE* next;
 			if (next = RightChild(*node))
@@ -99,7 +99,7 @@ public:
 		__inout const TYPE** node
 	)
 	{
-		if (node)
+		if (node && *node)
 		{
 			const TYPE* next;
 			if (next = LeftChild(*node))

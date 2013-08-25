@@ -38,12 +38,6 @@ const WCHAR* wcschrn(
 	__in_opt bool reverse = false
 	);
 
-__checkReturn
-void* GetProcAddress(
-	__in const void* base, 
-	__in const void* funcId
-	);
-
 #ifdef _WIN64
 
 EXTERN_C void __kebreak();

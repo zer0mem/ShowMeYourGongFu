@@ -302,7 +302,6 @@
     <ClInclude Include="..\Common\Kernel\Thread.hpp" />
     <ClInclude Include="..\Common\utils\AVL.hpp" />
     <ClInclude Include="..\Common\utils\BinTreeWalker.hpp" />
-    <ClInclude Include="..\Common\utils\DelayLoadEntryPointHook.hpp" />
     <ClInclude Include="..\Common\utils\ColdPatcher.hpp" />
     <ClInclude Include="..\Common\utils\CSYSCALL.h" />
     <ClInclude Include="..\Common\utils\CSYSCALL.hpp" />

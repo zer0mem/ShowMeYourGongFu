@@ -76,7 +76,7 @@ void __stdcall FastCallEvent(
 		popad
 
 		;invoke fast call
-		mov eax, [ebp] ; DBI_IOCALL
+		mov eax, [ecx] ; DBI_IOCALL
 
 _WaitForFuzzEvent:
 		cmp byte ptr[esp], 0	; thread friendly :P
@@ -132,7 +132,8 @@ void __cdecl FastCallMonitorWait(
 		mov dword ptr [esp + DBI_PARAMS * 4], eax
 
 		popad
-		mov eax, [ebp]
+		;invoke fast call
+		mov eax, [ecx] ; DBI_IOCALL
 		
 _WaitForFuzzEvent:
 		cmp byte ptr[esp], 0	; thread friendly :P
@@ -182,7 +183,8 @@ __declspec(naked)
 		mov dword ptr [esp + DBI_PARAMS * 4], eax
 
 		popad
-		mov eax, [ebp]
+		;invoke fast call
+		mov eax, [ecx] ; DBI_IOCALL
 
 _WaitForFuzzEvent:
 		popad

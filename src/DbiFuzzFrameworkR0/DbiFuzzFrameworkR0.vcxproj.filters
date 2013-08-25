@@ -6,9 +6,6 @@
       <Filter>Common\base</Filter>
     </ClCompile>
     <ClCompile Include="DriverEntry.cpp" />
-    <ClCompile Include="..\Common\Kernel\MemoryMapping.cpp">
-      <Filter>Common\Kernel</Filter>
-    </ClCompile>
     <ClCompile Include="..\Common\Kernel\Apc.cpp">
       <Filter>Common\Kernel</Filter>
     </ClCompile>
@@ -33,6 +30,9 @@
     <ClCompile Include="src\ImageInfo.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="..\Common\Kernel\MemoryMapping.cpp">
+      <Filter>Common\Kernel</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="drv_common.h" />
@@ -51,9 +51,6 @@
     </ClInclude>
     <ClInclude Include="Common\Stack.hpp">
       <Filter>src\Common</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\MemoryMapping.h">
-      <Filter>Common\Kernel</Filter>
     </ClInclude>
     <ClInclude Include="..\Common\Kernel\Lock.hpp">
       <Filter>Common\Kernel</Filter>
@@ -142,9 +139,6 @@
     <ClInclude Include="..\Common\utils\ColdPatcher.hpp">
       <Filter>Common\utils</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\utils\DelayLoadEntryPointHook.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
     <ClInclude Include="src\ThreadEvent.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -159,6 +153,9 @@
     </ClInclude>
     <ClInclude Include="..\Common\base\AutoMalloc.h">
       <Filter>Common\base</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\Kernel\MemoryMapping.h">
+      <Filter>Common\Kernel</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

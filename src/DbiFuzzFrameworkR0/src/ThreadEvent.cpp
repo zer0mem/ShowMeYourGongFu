@@ -49,7 +49,7 @@ void CThreadEvent::SetMemoryAccess(
 	if (access.WriteAccess)
 	{
 		CMdl mdl(faultAddr, sizeof(ULONG_PTR));
-		ULONG_PTR* val = reinterpret_cast<ULONG_PTR*>(mdl.Map());
+		const ULONG_PTR* val = reinterpret_cast<const ULONG_PTR*>(mdl.ReadPtr());
 		if (val)
 			m_currentThreadInfo.DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
 	}
@@ -71,7 +71,7 @@ bool CThreadEvent::FlipSemaphore(
 		if (eprocess.IsAttached())
 		{
 			CMdl event_semaphor(eventThreadInfo.EventSemaphor, sizeof(BYTE));
-			volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.Map());
+			volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.WritePtr());
 			if (semaphor)
 			{
 				return (0 == InterlockedExchange8(semaphor, 1));
@@ -90,8 +90,8 @@ void CThreadEvent::SetIret(
 	)
 {
 	size_t iret_size = IRetCount * (is64 ? sizeof(ULONG_PTR) : sizeof(ULONG));
-	CMdl r_auto_context(reinterpret_cast<const void*>(iretAddr), iret_size);
-	void* iret_ctx = r_auto_context.Map();
+	CMdl r_auto_context(reinterpret_cast<void*>(iretAddr), iret_size);
+	void* iret_ctx = r_auto_context.WritePtr();
 	if (iret_ctx)
 	{
 		if (is64)
@@ -215,7 +215,9 @@ bool CThreadEvent::Init(
 	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	m_initialized = m_ethread.Initialize();
+	if (!m_initialized)
+		m_initialized = m_ethread.Initialize();
+
 	m_currentThreadInfo.DumpContext(reg);
 	PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 	return m_initialized;
@@ -229,7 +231,7 @@ bool CThreadEvent::EnumMemory(
 	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 
 	CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MEMORY_ENUM));
-	MEMORY_ENUM* mem = reinterpret_cast<MEMORY_ENUM*>(auto_mem.Map());
+	MEMORY_ENUM* mem = reinterpret_cast<MEMORY_ENUM*>(auto_mem.WritePtrUser());
 	if (mem)
 	{
 		CVadNodeMemRange vad_mem;

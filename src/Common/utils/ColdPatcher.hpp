@@ -26,7 +26,7 @@ public:
 		if (CMMU::IsValid(addrToHook))
 		{
 			CMdl patcher(addrToHook, size);
-			void* cold_patch = patcher.Map();
+			void* cold_patch = patcher.WritePtr();
 			if (cold_patch)
 			{
 				DbgPrint("\n CColdPatch : %p %p %x\n", addrToHook, hook, size);
@@ -46,7 +46,7 @@ public:
 		if (m_addrToHook)
 		{
 			CMdl patcher(m_addrToHook, size);
-			void* cold_patch = patcher.Map();
+			void* cold_patch = patcher.WritePtr();
 
 			ASSERT(cold_patch);
 

@@ -57,7 +57,7 @@ void __stdcall FastCallEvent(
 		pushad
 		mov dword ptr [esp + DBI_IOCALL * 4], FAST_CALL
 
-		mov dword ptr [esp + DBI_INFO_OUT * 4], eax
+		mov dword ptr [esp + DBI_PARAMS * 4], eax
 
 		;SYSCALL_HOOK specific {
 		lea eax, [ebp + 1 * 4] ; ebp : 0:[pushf] 1:[ret1] 2:[fastCall] 3:[ret2 / retHookAddr]
@@ -91,7 +91,7 @@ _WaitForFuzzEvent:
 }
 
 __declspec(naked)
-void __cdecl FastCallMonitor(
+void __cdecl FastCallMonitorWait(
 	__in ULONG_PTR fastCall,
 	__in HANDLE procId,
 	__in HANDLE threadId,
@@ -106,10 +106,7 @@ void __cdecl FastCallMonitor(
 		lea ebp, [esp + REG_X86_COUNT * 4]; ebp points to flags -> push ebp in classic prologue
 
 		xor ebx, ebx
-		cmp fastCall, SYSCALL_ENUM_NEXT
-		jnz semaphore_on
-		inc ebx
-semaphore_on:
+
 		push ebx				; push semaphore onto stack
 		mov ebx, esp
 
@@ -132,11 +129,10 @@ semaphore_on:
 		mov dword ptr [esp + DBI_R3TELEPORT * 4], eax
 
 		mov eax, info
-		mov dword ptr [esp + DBI_INFO_OUT * 4], eax
+		mov dword ptr [esp + DBI_PARAMS * 4], eax
 
 		popad
 		mov eax, [ebp]
-
 		
 _WaitForFuzzEvent:
 		cmp byte ptr[esp], 0	; thread friendly :P
@@ -151,6 +147,51 @@ _WaitForFuzzEvent:
 	}
 }
 
+__declspec(naked)
+	void __cdecl FastCallMonitor(
+	__in ULONG_PTR fastCall,
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout void* info
+	)
+{
+	__asm
+	{
+		pushfd
+		pushad
+
+		lea ebp, [esp + REG_X86_COUNT * 4]; ebp points to flags -> push ebp in classic prologue
+
+		;set information for dbi
+		pushad
+		mov dword ptr [esp + DBI_IOCALL * 4], FAST_CALL
+
+		mov ecx, fastCall
+		mov dword ptr [esp + DBI_ACTION * 4], ecx ;fastCall
+
+		mov edx, procId
+		mov dword ptr [esp + DBI_FUZZAPP_PROC_ID * 4], edx ;procdId
+
+		mov edx, threadId
+		mov dword ptr [esp + DBI_FUZZAPP_THREAD_ID * 4], edx ;threadId
+
+		lea eax, [_WaitForFuzzEvent]
+		mov dword ptr [esp + DBI_R3TELEPORT * 4], eax
+
+		mov eax, info
+		mov dword ptr [esp + DBI_PARAMS * 4], eax
+
+		popad
+		mov eax, [ebp]
+
+_WaitForFuzzEvent:
+		popad
+		popfd
+
+
+		retn
+	}
+}
 #endif // _WIN64
 
 DLLEXPORT
@@ -158,9 +199,9 @@ void ExtTrapTrace()
 {
 	__asm
 	{
-			push [esp] ;in case of CALL FAR
-			push SYSCALL_TRACE_FLAG
-			call FastCallEvent
+		push [esp] ;in case of CALL FAR
+		push SYSCALL_TRACE_FLAG
+		call FastCallEvent
 	}
 }
 
@@ -182,7 +223,7 @@ void SmartTrace(
 	__inout DBI_OUT_CONTEXT* dbiOut
 	)
 {
-	FastCallMonitor(SYSCALL_TRACE_FLAG, procId, threadId, dbiOut);
+	FastCallMonitorWait(SYSCALL_TRACE_FLAG, procId, threadId, dbiOut);
 }
 
 EXTERN_C __declspec(dllexport) 
@@ -190,8 +231,92 @@ bool GetNextFuzzThread(
 	__inout CID_ENUM* cid
 	)
 {
-	HANDLE proc_id = cid->ProcId;
-	HANDLE thread_id = cid->ThreadId;
-	FastCallMonitor(SYSCALL_ENUM_NEXT, cid->ProcId, cid->ThreadId, cid);
-	return (proc_id != cid->ProcId || thread_id != cid->ThreadId);
+	HANDLE proc_id = cid->ProcId.Value;
+	HANDLE thread_id = cid->ThreadId.Value;
+	FastCallMonitor(SYSCALL_ENUM_THREAD, cid->ProcId.Value, cid->ThreadId.Value, cid);
+	return (proc_id != cid->ProcId.Value || thread_id != cid->ThreadId.Value);
+}
+
+EXTERN_C __declspec(dllexport) 
+void Init(
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout DBI_OUT_CONTEXT* dbiOut
+	)
+{
+	FastCallMonitor(SYSCALL_INIT, procId, threadId, dbiOut);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiEnumModules(
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout MODULE_ENUM* dbiOut
+	)
+{
+	FastCallMonitor(SYSCALL_ENUM_MODULES, procId, threadId, dbiOut);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiEnumMemory(
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout MEMORY_ENUM* dbiOut
+	)
+{
+	FastCallMonitor(SYSCALL_ENUM_MEMORY, procId, threadId, dbiOut);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiGetProcAddress(
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout PARAM_API* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_GETPROCADDR, procId, threadId, dbiParams);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiDumpMemory(
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__in_bcount(size) const void* src,
+	__in_bcount(size) void* dst,
+	__in size_t size
+	)
+{
+	PARAM_MEMCOPY mem_cpy;
+	RtlZeroMemory(&mem_cpy, sizeof(mem_cpy));
+	mem_cpy.Src.Value = src;
+	mem_cpy.Dst.Value = dst;
+	mem_cpy.Size.Value = size;
+	FastCallMonitor(SYSCALL_DUMP_MEMORY, procId, threadId, &mem_cpy);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiPatchMemory(
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__in_bcount(size) const void* src,
+	__in_bcount(size) void* dst,
+	__in size_t size
+	)
+{
+	PARAM_MEMCOPY mem_cpy;
+	RtlZeroMemory(&mem_cpy, sizeof(mem_cpy));
+	mem_cpy.Src.Value = src;
+	mem_cpy.Dst.Value = dst;
+	mem_cpy.Size.Value = size;
+	FastCallMonitor(SYSCALL_PATCH_MEMORY, procId, threadId, &mem_cpy);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiSetHook(
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout PARAM_HOOK* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_SET_HOOK, procId, threadId, dbiParams);
 }

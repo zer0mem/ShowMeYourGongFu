@@ -40,7 +40,7 @@ struct EVENT_THREAD_INFO
 		)
 	{
 		size_t ctx_size = (is64 ? sizeof(ULONG_PTR) * (REG_X64_COUNT + 1) : sizeof(ULONG) * (REG_X86_COUNT + 1));
-		CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_INFO_OUT]), ctx_size);
+		CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_PARAMS]), ctx_size);
 		void* r_context = r_auto_context.Map();
 		if (r_context)
 		{
@@ -70,7 +70,7 @@ struct EVENT_THREAD_INFO
 		__in ULONG_PTR reg[REG_COUNT]
 		)
 	{
-		CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_INFO_OUT]), sizeof(DBI_OUT_CONTEXT));
+		CMdl r_auto_context(reinterpret_cast<const void*>(reg[DBI_PARAMS]), sizeof(DBI_OUT_CONTEXT));
 		DBI_OUT_CONTEXT* r_context = reinterpret_cast<DBI_OUT_CONTEXT*>(r_auto_context.Map());
 		if (r_context)
 		{
@@ -99,8 +99,7 @@ public:
 	__checkReturn
 	bool HookEvent(
 		__in CImage* img,
-		__in ULONG_PTR reg[REG_COUNT],
-		CLockedAVL<CMemoryRange>* m_nonWritePages = NULL
+		__in ULONG_PTR reg[REG_COUNT]
 	);
 
 	__checkReturn
@@ -121,12 +120,27 @@ public:
 	bool SmartTrace(
 		__in ULONG_PTR reg[REG_COUNT]
 		);
+		
+	__checkReturn
+	bool EnumMemory(
+		__in ULONG_PTR reg[REG_COUNT]
+		);
+		
+	__checkReturn
+	bool WatchMemoryAccess(
+		__in ULONG_PTR reg[REG_COUNT]
+		);
 
 	void SetMemoryAccess( 
 		__in const BYTE* faultAddr,
-		__in ULONG access,
+		__in const ERROR_CODE& access,
 		__in const void* begin,
-		__in size_t size
+		__in size_t size,
+		__in ULONG_PTR flags
+		);
+
+	bool Init(
+		__in ULONG_PTR reg[REG_COUNT]
 		);
 
 	__forceinline
@@ -135,20 +149,41 @@ public:
 		return m_currentThreadInfo.DbiOutContext.MemoryInfo;
 	}
 
+	__forceinline
 	CRange<ULONG_PTR>& GetStack()
 	{
-		//should be shipped to more appropriate place for performance reasons ...
-		if (!m_ethread.Stack().Begin())
-			m_ethread.Initialize();
-
 		return m_ethread.Stack();
 	}
 
-	__checkReturn
-	bool ResolveStack()
+	__forceinline
+	CEthread& GetEthread()
 	{
-		return m_ethread.Initialize();
+		return m_ethread;
 	}
+
+	__checkReturn
+	__forceinline
+	bool IsMemory2Watch(
+		__in const void* addr,
+		__in size_t size
+		)
+	{
+		return m_mem2watch.Find(CMemoryRange(reinterpret_cast<const BYTE*>(addr), size));
+	}
+
+	__checkReturn
+	__forceinline
+	bool GetMemory2Watch(
+		__in const void* addr,
+		__in size_t size,
+		__inout CMemoryRange** mem
+		)
+	{
+		return m_mem2watch.Find(CMemoryRange(reinterpret_cast<const BYTE*>(addr), size), mem);
+
+	}
+
+	void insert_tmp(CMemoryRange& mem) {m_mem2watch.Push(mem);}
 
 protected:
 	__checkReturn 
@@ -183,9 +218,37 @@ protected:
 	EVENT_THREAD_INFO m_monitorThreadInfo;
 	EVENT_THREAD_INFO m_currentThreadInfo;
 
+	bool m_initialized;
+	CLockedAVL<CMemoryRange> m_mem2watch;
+
 private:
 	//reference this ethread in m$
 	CEthread m_ethread;
+};
+
+template<class TYPE>
+__checkReturn
+bool ReadParamBuffer(
+	__in ULONG_PTR reg[REG_COUNT],
+	__inout TYPE* paramsBuff
+	)
+{
+	if (sizeof(TYPE) <= sizeof(reg[DBI_PARAMS]))
+	{
+		*paramsBuff = *reinterpret_cast<TYPE*>(&reg[DBI_PARAMS]);
+		return true;
+	}
+	else
+	{
+		CMdl mdl(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(TYPE));
+		TYPE* params_buff = reinterpret_cast<TYPE*>(mdl.Map());
+		if (params_buff)
+		{
+			*paramsBuff = *params_buff;
+			return true;
+		}
+	}
+	return false;
 };
 
 #endif //__THREADEVENT_H__

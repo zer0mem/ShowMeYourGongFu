@@ -56,6 +56,15 @@ public:
 
 protected:
 	__checkReturn
+	bool VirtualMemoryCallback(
+		__in void* memory,
+		__in size_t size,
+		__in bool write,
+		__inout ULONG_PTR reg[REG_COUNT],
+		__inout_opt BYTE* buffer = NULL
+		) override;
+
+	__checkReturn
 	__forceinline
 	bool GetFuzzThread(
 		__in HANDLE threadId,
@@ -89,15 +98,6 @@ protected:
 		return false;
 	}
 
-	__checkReturn
-	bool VirtualMemoryCallback(
-		__in void* memory,
-		__in size_t size,
-		__in bool write,
-		__inout ULONG_PTR reg[REG_COUNT],
-		__inout_opt BYTE* buffer = NULL
-		) override;
-
 private:
 	__checkReturn
 	bool DbiHook(
@@ -119,6 +119,11 @@ private:
 	bool DbiEnumThreads(
 		__inout ULONG_PTR reg[REG_COUNT]
 		);
+		
+	__checkReturn
+	bool DbiSuspendThread(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
 
 	__checkReturn
 	bool DbiEnumMemory(
@@ -129,13 +134,51 @@ private:
 	bool DbiWatchMemoryAccess(
 		__inout ULONG_PTR reg[REG_COUNT]
 		);
+		
+	__checkReturn
+	bool DbiInit(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);		
+		
+	__checkReturn
+	bool DbiEnumModules(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);	
+		
+	__checkReturn
+	bool DbiGetProcAddress(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+		
+	__checkReturn
+	bool DbiDumpMemory(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+		
+	__checkReturn
+	bool DbiPatchMemory(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+		
+	__checkReturn
+	bool DbiSetEip(
+		__inout ULONG_PTR reg[REG_COUNT]
+	);
+
+	__checkReturn
+	bool DbiSetHook(
+		__inout ULONG_PTR reg[REG_COUNT]
+	);
+		
+	__checkReturn
+	bool DbiRun(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
 
 protected:
 	bool m_installed;
 
 	const void* m_extRoutines[ExtCount];
-
-	CLockedAVL<CMemoryRange> m_mem2watch;
 };
 
 #endif //__FUZZPROCESS_H__

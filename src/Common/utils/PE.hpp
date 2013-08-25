@@ -129,31 +129,34 @@ private:
 		__inout_opt bool* is64
 		)
 	{
-		const IMAGE_DOS_HEADER* dos_header = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-		if (dos_header->e_magic == IMAGE_DOS_SIGNATURE)
+		if (base)
 		{
-			const IMAGE_NT_HEADERS* nt_header = MEMBER(IMAGE_NT_HEADERS, dos_header, dos_header->e_lfanew);
-			if (nt_header->Signature == IMAGE_NT_SIGNATURE)
+			const IMAGE_DOS_HEADER* dos_header = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+			if (dos_header->e_magic == IMAGE_DOS_SIGNATURE)
 			{
-				if (nt_header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR_MAGIC)
+				const IMAGE_NT_HEADERS* nt_header = MEMBER(IMAGE_NT_HEADERS, dos_header, dos_header->e_lfanew);
+				if (nt_header->Signature == IMAGE_NT_SIGNATURE)
 				{
-					*optHeader = reinterpret_cast<const IMAGE_NT_HEADERS*>(&nt_header->OptionalHeader);
-					if (is64)
-						*is64 = true;
+					if (nt_header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR_MAGIC)
+					{
+						*optHeader = reinterpret_cast<const IMAGE_NT_HEADERS*>(&nt_header->OptionalHeader);
+						if (is64)
+							*is64 = true;
 #ifdef _WIN64
-				}
-				else if (nt_header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
-				{
-					const IMAGE_NT_HEADERS32* nt_header32 = MEMBER(const IMAGE_NT_HEADERS32, dos_header, dos_header->e_lfanew);
-					*optHeader = reinterpret_cast<const IMAGE_NT_HEADERS32*>(&nt_header32->OptionalHeader);
-					if (is64)
-						*is64 = false;
+					}
+					else if (nt_header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+					{
+						const IMAGE_NT_HEADERS32* nt_header32 = MEMBER(const IMAGE_NT_HEADERS32, dos_header, dos_header->e_lfanew);
+						*optHeader = reinterpret_cast<const IMAGE_NT_HEADERS32*>(&nt_header32->OptionalHeader);
+						if (is64)
+							*is64 = false;
 #endif
-				}
+					}
 
-				return true;
+					return true;
+				}
 			}
-		}
+		}		
 		return false;
 	}
 

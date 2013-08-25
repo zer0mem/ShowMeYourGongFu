@@ -316,16 +316,16 @@ void CDbiMonitor::TrapHandler(
 						{
 							if (!vmread(VMX_VMCS64_GUEST_RSP, &branch_i->StackPtr))
 							{
-								branch_i->DstEip = reinterpret_cast<const void*>(ins_addr);
-								branch_i->SrcEip = reinterpret_cast<const void*>(src);
+								branch_i->DstEip.Value = reinterpret_cast<const void*>(ins_addr);
+								branch_i->SrcEip.Value = reinterpret_cast<const void*>(src);
 
-								branch_i->Cr2 = reinterpret_cast<BYTE*>(readcr2());
-								branch_i->Flags = rflags;
+								branch_i->Cr2.Value = reinterpret_cast<BYTE*>(readcr2());
+								branch_i->Flags.Value = rflags;
 
 								//disable trap flag and let handle it by PageFault Hndlr
 								vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 								//set eip to non-exec mem for quick recognization by PageFault handler
-								vmwrite(VMX_VMCS64_GUEST_RIP, branch_i->StackPtr);
+								vmwrite(VMX_VMCS64_GUEST_RIP, branch_i->StackPtr.Value);
 								return;
 							}
 						}

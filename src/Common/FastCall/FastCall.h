@@ -13,34 +13,42 @@ enum
 	FAST_CALL = 0x666,
 	SYSCALL_TRACE_FLAG = 0x200,
 	SYSCALL_HOOK,
+
 	SYSCALL_PATCH_MEMORY,
 	SYSCALL_DUMP_MEMORY,
-	SYSCALL_GET_CONTEXT,
-	SYSCALL_SET_CONTEXT,
-	SYSCALL_TRACE_RET,
-	SYSCALL_ENUM_NEXT,
-	SYSCALL_MMU_NOACC,
+
+	SYSCALL_ENUM_THREAD,
+	SYSCALL_ENUM_MODULES,
+	SYSCALL_ENUM_MEMORY,
+
+	SYSCALL_WATCH_MEMORY,
+	SYSCALL_GETPROCADDR,
+	SYSCALL_SET_EIP,
+	SYSCALL_SET_HOOK,
+	SYSCALL_RUN,
+
+	SYSCALL_INIT,
 };
 
 enum
 {
-	DBI_IOCALL = RBP,
-
-	DBI_FUZZAPP_PROC_ID = RCX,
-	DBI_IRET = RCX,
-	DBI_MEM2WATCH = RCX,
-
-	DBI_FUZZAPP_THREAD_ID = RSI,
-	DBI_RETURN = RSI,
-	DBI_SIZE2WATCH = RSI,
-
+//per reg INFO
 	DBI_ACTION = RAX,
 
-	DBI_SEMAPHORE = RBX,
+	DBI_IOCALL = RCX, //x86 compatibility ...
 
 	DBI_R3TELEPORT = RDI,
 
-	DBI_INFO_OUT = RDX,
+	DBI_SEMAPHORE = RBX,
+
+	DBI_FUZZAPP_PROC_ID = RBP, //monitor
+	DBI_IRET = RBP, //target
+
+	DBI_FUZZAPP_THREAD_ID = RSI, //monitor
+	DBI_RETURN = RSI, //target
+
+//optional parameter!
+	DBI_PARAMS = RDX,
 };
 
 #define DBI_FLAGS REG_COUNT
@@ -63,30 +71,6 @@ enum EnumIRET
 
 #pragma pack(push, 1)
 
-struct BRANCH_INFO 
-{
-	const void* DstEip;
-	const void* SrcEip;
-	const ULONG_PTR* StackPtr;
-	BYTE* Cr2;
-	ULONG64 Flags;
-};
-
-struct MEMORY_ACCESS
-{
-	const void* Memory;
-	ULONG Access;
-	const void* Begin;
-	size_t Size;
-};
-
-struct DBI_OUT_CONTEXT
-{
-	ULONG64 GeneralPurposeContext[REG_COUNT + 1];
-	BRANCH_INFO LastBranchInfo;
-	MEMORY_ACCESS MemoryInfo;
-};
-
 template<class TYPE>
 struct TYPE_X86COMPATIBLE
 {
@@ -95,6 +79,32 @@ struct TYPE_X86COMPATIBLE
 		ULONG64 uValue;
 		TYPE Value;
 	};
+};
+
+struct BRANCH_INFO 
+{
+	TYPE_X86COMPATIBLE<const void*> DstEip;
+	TYPE_X86COMPATIBLE<const void*> SrcEip;
+	TYPE_X86COMPATIBLE<const ULONG_PTR*> StackPtr;
+	TYPE_X86COMPATIBLE<BYTE*> Cr2;
+	TYPE_X86COMPATIBLE<ULONG64> Flags;
+};
+
+struct MEMORY_ACCESS
+{
+	TYPE_X86COMPATIBLE<const void*> Memory;
+	TYPE_X86COMPATIBLE<ERROR_CODE> Access;
+	TYPE_X86COMPATIBLE<const void*> Begin;
+	TYPE_X86COMPATIBLE<size_t> Size;
+	TYPE_X86COMPATIBLE<ULONG> Flags;
+	TYPE_X86COMPATIBLE<ULONG_PTR> OriginalValue;
+};
+
+struct DBI_OUT_CONTEXT
+{
+	ULONG_PTR GeneralPurposeContext[REG_COUNT + 1];
+	BRANCH_INFO LastBranchInfo;
+	MEMORY_ACCESS MemoryInfo;
 };
 
 struct CID_ENUM
@@ -108,6 +118,38 @@ struct MEMORY_ENUM
 	TYPE_X86COMPATIBLE<const void*> Begin;
 	TYPE_X86COMPATIBLE<size_t> Size;
 	TYPE_X86COMPATIBLE<ULONG> Flags;
+};
+
+struct MODULE_ENUM
+{
+	TYPE_X86COMPATIBLE<const void*> ImageBase;
+	TYPE_X86COMPATIBLE<size_t> ImageSize;
+	TYPE_X86COMPATIBLE<WCHAR[0x100]> ImageName;
+};
+
+struct PARAM_API
+{
+	TYPE_X86COMPATIBLE<const void*> ApiAddr;
+	TYPE_X86COMPATIBLE<const void*> ModuleBase;
+	TYPE_X86COMPATIBLE<CHAR[0x100]> ApiName;
+};
+
+struct PARAM_MEMCOPY
+{
+	TYPE_X86COMPATIBLE<const void*> Src;
+	TYPE_X86COMPATIBLE<void*> Dst;
+	TYPE_X86COMPATIBLE<size_t> Size;
+};
+
+struct PARAM_HOOK
+{
+	TYPE_X86COMPATIBLE<void*> HookAddr;
+};
+
+struct PARAM_MEM2WATCH
+{
+	TYPE_X86COMPATIBLE<const void*> Memory;
+	TYPE_X86COMPATIBLE<size_t> Size;
 };
 
 #pragma pack(pop)

@@ -43,6 +43,8 @@ typedef const void *LPCVOID;
 // ****************** DEFINE HELPERS ******************
 //-----------------------------------------------------
 
+#define DIRTY_FLAG ((ULONG_PTR)1 << 32)
+
 #pragma pack(push, 1)
 
 struct ERROR_CODE
@@ -53,7 +55,7 @@ struct ERROR_CODE
 		struct  
 		{
 			ULONG_PTR Present : 1;
-			ULONG_PTR ReadAccess : 1;
+			ULONG_PTR WriteAccess : 1;
 			ULONG_PTR Ring3 : 1;
 		};
 	};
@@ -71,7 +73,7 @@ struct PFIRET
 
 #define PPAGE_FAULT_IRET(reg) reinterpret_cast<PFIRET*>(HOOK_ORIG_RSP(reg))//skip unknown param
 
-#define ALIGN(addr, granularity)	(ULONG_PTR)((ULONG_PTR)addr & (~(granularity - 1)))
+#define ALIGN(addr, granularity)	(ULONG_PTR)((ULONG_PTR)(addr) & (~((granularity) - 1)))
 
 
 //------------------------------------------------------------------

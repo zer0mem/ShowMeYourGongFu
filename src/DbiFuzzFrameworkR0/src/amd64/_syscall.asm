@@ -12,6 +12,14 @@ get_ring3_rsp proc
 	ret
 get_ring3_rsp endp
 
+disable_branchtrace proc
+	int 3
+	mov rax, dr7
+	and eax, not ((1 shl 8) or (1 shl 9)) ;~0300h
+	mov dr7, rax
+	ret
+disable_branchtrace endp
+
 sysenter proc
 	swapgs
 	mov qword ptr gs:[Ring3RSP],rsp

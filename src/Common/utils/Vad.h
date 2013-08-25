@@ -75,15 +75,22 @@ struct VM_FLAGS
 
 struct MMVAD_FLAGS
 {
-	ULONG VadType          : 3;
-	ULONG Protection       : 5;
-	ULONG PreferredNode    : 6;
-	ULONG NoChange         : 1;
-	ULONG PrivateMemory    : 1;
-	ULONG Teb              : 1;
-	ULONG PrivateFixup     : 1;
-	ULONG Spare            : 13;
-	ULONG DeleteInProgress : 1;
+	union
+	{
+		ULONG UFlags;
+		struct  
+		{
+			ULONG VadType          : 3;
+			ULONG Protection       : 5;
+			ULONG PreferredNode    : 6;
+			ULONG NoChange         : 1;
+			ULONG PrivateMemory    : 1;
+			ULONG Teb              : 1;
+			ULONG PrivateFixup     : 1;
+			ULONG Spare            : 13;
+			ULONG DeleteInProgress : 1;
+		};
+	};
 };
 
 struct AVL_INFO

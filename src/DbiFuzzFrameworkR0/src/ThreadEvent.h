@@ -11,6 +11,7 @@
 #include "../../Common/utils/SyscallCallbacks.hpp"
 #include "../../Common/utils/LockedContainers.hpp"
 #include "../../Common/Kernel/MemoryMapping.h"
+#include "../../Common/utils/MemoryRange.h"
 
 #include "../../Common/FastCall/FastCall.h"
 
@@ -85,57 +86,69 @@ struct EVENT_THREAD_INFO
 class CThreadEvent :
 	public THREAD_INFO
 {
-	enum EnumIRET
-	{
-		IReturn = 0,
-		ICodeSegment,
-		IFlags,
-		IRetCount
-	};
 public:
 	MEMORY_INFO LastMemoryInfo;
 	ULONG_PTR GeneralPurposeContext[REG_COUNT];
-
-	CThreadEvent();
-
+	
 	CThreadEvent(
 		__in HANDLE threadId,
-		__in HANDLE parentProcessId = NULL
+		__in HANDLE parentProcessId
 		);
-
-// VIRTUAL MEMORY HANDLER support routines
-	__checkReturn
-	bool WaitForSyscallEpilogue();
-
-	void SetCallbackEpilogue(
-		__in ULONG_PTR reg[REG_COUNT],
-		__in void* memory,
-		__in size_t size,
-		__in bool write,
-		__in_opt void* pageFault = NULL
-		);
-
-	void EpilogueProceeded();
 
 // FUZZ MONITOR HANDLER support routines
 	__checkReturn
 	bool HookEvent(
 		__in CImage* img,
-		__in ULONG_PTR reg[REG_COUNT]
+		__in ULONG_PTR reg[REG_COUNT],
+		CLockedAVL<CMemoryRange>* m_nonWritePages = NULL
 	);
 
 	__checkReturn
 	bool SmartTraceEvent(
 		__in CImage* img,
 		__in ULONG_PTR reg[REG_COUNT],
-		__in const BRANCH_INFO& branchInfo,
-		__in CLockedAVL<CIMAGEINFO_ID>& imgs
+		__in const BRANCH_INFO& branchInfo
 	);
+	
+	void MemoryProtectionEvent(
+		__in void* memory,
+		__in size_t size,
+		__in bool write,
+		__in ULONG_PTR reg[REG_COUNT]
+		);
 
 	__checkReturn
 	bool SmartTrace(
 		__in ULONG_PTR reg[REG_COUNT]
 		);
+
+	void SetMemoryAccess( 
+		__in const BYTE* faultAddr,
+		__in ULONG access,
+		__in const void* begin,
+		__in size_t size
+		);
+
+	__forceinline
+	MEMORY_ACCESS& GetMemoryAccess()
+	{
+		return m_currentThreadInfo.DbiOutContext.MemoryInfo;
+	}
+
+	CRange<ULONG_PTR>& GetStack()
+	{
+		//should be shipped to more appropriate place for performance reasons ...
+		if (!m_ethread.Stack().Begin())
+			m_ethread.Initialize();
+
+		return m_ethread.Stack();
+	}
+
+	__checkReturn
+	bool ResolveStack()
+	{
+		return m_ethread.Initialize();
+	}
 
 protected:
 	__checkReturn 
@@ -154,7 +167,7 @@ protected:
 private:
 	template<class TYPE>
 	__forceinline
-		void SetIret(
+	void SetIret(
 		__inout TYPE* iret,
 		__in const void* ret,
 		__in ULONG_PTR segSel,
@@ -167,10 +180,12 @@ private:
 	}
 
 protected:
-	bool WaitForSyscallCallback;
-
 	EVENT_THREAD_INFO m_monitorThreadInfo;
 	EVENT_THREAD_INFO m_currentThreadInfo;
+
+private:
+	//reference this ethread in m$
+	CEthread m_ethread;
 };
 
 #endif //__THREADEVENT_H__

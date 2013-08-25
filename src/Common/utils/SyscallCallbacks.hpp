@@ -13,13 +13,13 @@
 
 struct MEMORY_INFO
 {
-	void* Memory;
+	const void* Memory;
 	size_t Size;
 	bool Write;
 	void* Buffer;
 
 	void SetInfo(
-		__in void* memory,
+		__in const void* memory,
 		__in size_t size,
 		__in bool write,
 		__in_opt void* buffer = NULL
@@ -74,7 +74,7 @@ protected:
 		return VirtualMemoryCallback(
 			reinterpret_cast<void*>(*reinterpret_cast<ULONG_PTR*>(reg[RDX])), 
 			*reinterpret_cast<size_t*>(reg[R8]), 
-			false, 
+			false,  
 			reg
 			);
 	}
@@ -84,7 +84,7 @@ protected:
 	{
 		return VirtualMemoryCallback(reinterpret_cast<void*>(reg[RDX]), 
 			0, 
-			false, 
+			false,
 			reg
 			);
 	}
@@ -95,7 +95,7 @@ protected:
 		return VirtualMemoryCallback(
 			reinterpret_cast<void*>(reg[RDX]), 
 			(size_t)reg[R9], 
-			true, 
+			true,
 			reg, 
 			reinterpret_cast<BYTE*>(reg[R8])
 			);
@@ -107,7 +107,7 @@ protected:
 		return VirtualMemoryCallback(
 			reinterpret_cast<void*>(reg[RDX]),
 			(size_t)reg[R9], 
-			false, 
+			false,
 			reg, 
 			reinterpret_cast<BYTE*>(reg[R8])
 			);
@@ -119,7 +119,7 @@ protected:
 		return VirtualMemoryCallback(
 			reinterpret_cast<void*>(*reinterpret_cast<ULONG_PTR*>(reg[RDX])), 
 			*reinterpret_cast<size_t*>(reg[R8]), 
-			!!((ULONG)reg[R9] & PAGE_WR_MASK), 
+			!!((ULONG)reg[R9] & PAGE_WR_MASK),
 			reg
 			);
 	}
@@ -130,7 +130,7 @@ protected:
 		return VirtualMemoryCallback(
 			reinterpret_cast<void*>(*reinterpret_cast<ULONG_PTR*>(reg[RDX])), 
 			*reinterpret_cast<size_t*>(reg[R8]), 
-			false, 
+			false,
 			reg
 			);
 	}
@@ -141,7 +141,7 @@ protected:
 		return VirtualMemoryCallback(
 			reinterpret_cast<void*>(*reinterpret_cast<ULONG_PTR*>(reg[RDX])), 
 			*reinterpret_cast<size_t*>(reg[R8]), 
-			false, 
+			false,
 			reg
 			);
 	}
@@ -153,7 +153,7 @@ protected:
 		return VirtualMemoryCallback(
 			reinterpret_cast<void*>(*reinterpret_cast<ULONG_PTR*>(reg[R9])), 
 			*reinterpret_cast<size_t*>(reinterpret_cast<ULONG_PTR*>(reg[R9]) + 1),
-			false, 
+			false,
 			reg
 			);
 	}
@@ -164,7 +164,7 @@ protected:
 		return VirtualMemoryCallback(
 			reinterpret_cast<void*>(*reinterpret_cast<ULONG_PTR*>(reg[RDX])), 
 			*reinterpret_cast<size_t*>(reg[R8]), 
-			false, 
+			false,
 			reg
 			);
 	}

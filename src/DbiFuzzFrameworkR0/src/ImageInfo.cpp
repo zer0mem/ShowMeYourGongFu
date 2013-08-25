@@ -10,13 +10,15 @@
 #include "../../Common/base/Common.h"
 #include "Common/Constants.h"
 #include "../../Common/utils/HashString.hpp"
+#include "../../Common/utils/PE.hpp"
 
 CImage::CImage(
-	__in_opt UNICODE_STRING* fullImageName,
-	__in IMAGE_INFO* imgInfo 
-	) : LOADED_IMAGE(imgInfo)
+	__in_opt UNICODE_STRING* fullImageName, 
+	__in HANDLE processId, 
+	__in IMAGE_INFO* imageInfo 
+	) : LOADED_IMAGE(fullImageName, processId, imageInfo)
 {
-	CPE pe(imgInfo->ImageBase);
+	CPE pe(imageInfo->ImageBase);
 	if (pe.IsValid())
 	{
 		m_is64 = pe.Is64Img();
@@ -28,9 +30,10 @@ CImage::CImage(
 		m_entryPoint = 0;
 	}
 
-	if (CProcessContext::ResolveImageName(fullImageName->Buffer, 
-		fullImageName->Length / sizeof(fullImageName->Buffer[0]), 
-		&m_imageName))
+	if (fullImageName && 
+		CProcessContext<THREAD_INFO, CHILD_PROCESS, LOADED_IMAGE>::ResolveImageName(fullImageName->Buffer, 
+			fullImageName->Length / sizeof(fullImageName->Buffer[0]), 
+			&m_imageName))
 	{
 		m_imgNameBuffer = new WCHAR[(m_imageName.Length + 2) >> 1];
 		if (m_imgNameBuffer)

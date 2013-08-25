@@ -16,22 +16,19 @@
 
 #include "../HyperVisor/Common/base/HVCommon.h"
 
+#define DIRTY_FLAG ((ULONG_PTR)1 << 32)
+
+EXTERN_C void disable_branchtrace();
+
 CProcess2Fuzz::CProcess2Fuzz( 
 	__inout PEPROCESS process, 
 	__in HANDLE processId, 
 	__inout_opt PS_CREATE_NOTIFY_INFO* createInfo 
 	) : CProcessContext(process, processId, createInfo),
-		m_mainImg(NULL),
-		m_internalError(false),
 		m_installed(false)
 {
 	RtlZeroMemory(m_extRoutines, sizeof(m_extRoutines));
 }
-
-CProcess2Fuzz::~CProcess2Fuzz()
-{
-}
-
 
 //---------------------------------------------------------------------
 // ****************** DBI PROC ENVIROMENT WATCH DOGS ******************
@@ -59,111 +56,28 @@ bool CProcess2Fuzz::WatchProcess(
 	return false;
 }
 
-void CProcess2Fuzz::ProcessNotifyRoutineEx( 
-	__inout PEPROCESS eprocess, 
-	__in HANDLE processId,
-	__inout_opt PS_CREATE_NOTIFY_INFO* createInfo
-	)
-{
-	DbgPrint("\n @ProcessNotifyRoutineEx %x %p %s\n", processId, eprocess, !!createInfo ? "start" : "exit");
-}
-
-void CProcess2Fuzz::ChildProcessNotifyRoutineEx( 
-	__inout PEPROCESS eprocess, 
-	__in HANDLE processId, 
-	__inout_opt PS_CREATE_NOTIFY_INFO* createInfo 
-	)
-{
-	if (createInfo)
-		(void)m_childs.Push(CHILD_PROCESS(eprocess, processId));
-	else
-		(void)m_childs.Pop(CHILD_PROCESS(eprocess));
-
-	DbgPrint("\n CHILD!ProcessNotifyRoutineEx %x %p %s %x\n", processId, PsGetCurrentProcessId(), !!createInfo ? "start" : "exit", createInfo->ImageFileName->Buffer);
-}
-
 void CProcess2Fuzz::ImageNotifyRoutine( 
 	__in_opt UNICODE_STRING* fullImageName, 
 	__in HANDLE processId,
 	__in IMAGE_INFO* imageInfo
 	)
 {
-	if (m_internalError)
-		return;
+	CProcessContext::ImageNotifyRoutine(fullImageName, processId, imageInfo);
 
-	if (!imageInfo->SystemModeImage)
+	IMAGE* img_id;
+	CRange<void> img(imageInfo->ImageBase);
+	img.SetSize(imageInfo->ImageSize);
+	if (m_loadedImgs.Find(img, &img_id) && img_id->Value)
 	{
-		CImage* img = new CImage(fullImageName, imageInfo);
-		if (img)
+		if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img_id->Value->ImageName())))
 		{
-			CIMAGEINFO_ID img_id(img->Image(), img);
-
-			//drop overlapped images; handle unhook in ~coldpatch -> now it is unloaded img, unhooking == badidea
-			while (m_loadedImgs.Pop(img_id));
-
-			if (m_loadedImgs.Push(img_id))
-			{
-				img_id.Value = NULL;
-				if (!m_mainImg)
-					m_mainImg = img;
-
-				if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img->ImageName())))
-				{
-					KeBreak();
-					CPE pe(imageInfo->ImageBase);
-					const void* func_name;
-					for (size_t i = 0;
-						(func_name = CConstants::InAppExtRoutines(i));
-						i++)
-					{
-						m_extRoutines[i] = pe.GetProcAddress(func_name);
-					}
-				}
-			}
-			else
-			{
-				if (!m_mainImg)
-					m_internalError = true;
-			}
+			KeBreak();
+			CPE pe(imageInfo->ImageBase);
+			const void* func_name;
+			for (size_t i = 0; (func_name = CConstants::InAppExtRoutines(i)); i++)
+				m_extRoutines[i] = pe.GetProcAddress(func_name);
 		}
-		
-		DbgPrint("\n @ImageNotifyRoutine %x %p [%p %p]\n", processId, PsGetCurrentProcess(), imageInfo->ImageBase, imageInfo->ImageSize);
 	}
-	else
-	{
-		DbgPrint("\n SYSTEM ImageNotifyRoutine %x %p\n", processId, PsGetCurrentProcess());
-	}
-}
-
-void CProcess2Fuzz::ThreadNotifyRoutine( 
-	__in HANDLE processId, 
-	__in HANDLE threadId, 
-	__in BOOLEAN create
-	)
-{
-	CThreadEvent thread_info(threadId, processId);
-
-	if (!!create)
-		(void)m_threads.Push(thread_info);
-	else
-		(void)m_threads.Pop(thread_info);
-
-	DbgPrint("\n @ThreadNotifyRoutine %x %p %s\n", processId, PsGetCurrentProcess(), !!create ? "start" : "exit");
-}
-
-void CProcess2Fuzz::RemoteThreadNotifyRoutine(
-	__in HANDLE parentProcessId, 
-	__in HANDLE threadId, 
-	__in BOOLEAN create 
-	)
-{
-	CThreadEvent thread_info(threadId, parentProcessId);
-	if (!!create)
-		(void)m_threads.Push(thread_info);
-	else
-		(void)m_threads.Pop(thread_info);
-
-	DbgPrint("\n REMOTE!ThreadNotifyRoutine %x %p %s\n", parentProcessId, PsGetCurrentProcess(), !!create ? "start" : "exit");
 }
 
 
@@ -180,13 +94,10 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 	__inout_opt BYTE* buffer /*= NULL*/
 	)
 {
-	DbgPrint("\n@VirtualMemoryCallback %p %p [thread : %p]\n", PsGetThreadProcessId(PsGetCurrentThread()), m_processId, PsGetCurrentThread());
-	CThreadEvent* fuzz_thread;
-	if (m_threads.Find(CThreadEvent(), &fuzz_thread))
+	if (m_mem2watch.Find(CMemoryRange(reinterpret_cast<BYTE*>(memory), size)))
 	{
-		ULONG_PTR* r3stack = get_ring3_rsp();
-		DbgPrint("\n >  I. @Prologue %p %p [%p]\n", r3stack, *r3stack, reg[RCX]);
-		fuzz_thread->SetCallbackEpilogue(reg, memory, size, write);
+		KeBreak();
+		CMMU::SetValid(memory, size);
 	}
 
 	return false;
@@ -194,60 +105,50 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 
 __checkReturn
 bool CProcess2Fuzz::Syscall( 
-	__inout ULONG_PTR reg[REG_COUNT] 
+	__inout ULONG_PTR reg[REG_COUNT],
+	__in_opt BRANCH_INFO* branchInfo /* = NULL */
 	)
 {
-	//implement ref counting ? auto_ptr...
-	//but assumption, if thread is in syscall then it can not exit for now good enough...
-	CThreadEvent* fuzz_thread;
-	if (m_threads.Find(CThreadEvent(), &fuzz_thread))
-	{		
-		if (fuzz_thread->WaitForSyscallEpilogue())
-		{				
-			if (fuzz_thread->LastMemoryInfo.Write &&
-				!fuzz_thread->Stack().IsInRange(reinterpret_cast<ULONG_PTR*>(fuzz_thread->LastMemoryInfo.Memory)))
-			{
-				SetUnwriteable(fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size);
-			}
-				
-			DbgPrint("\n > @Epilogue %p %x %s\n", fuzz_thread->LastMemoryInfo.Memory, fuzz_thread->LastMemoryInfo.Size, fuzz_thread->LastMemoryInfo.Write ? "attempt to write" : "easy RE+ attempt");
-			fuzz_thread->EpilogueProceeded();
-			return true;
-		}
+	ULONG_PTR ring0rsp = reg[RSP];
+	
+	//if x86 then this called from PageFault handler, and RSP is original ...
+	if (m_mainImg->Is64())
+		reg[RSP] = (ULONG_PTR)(get_ring3_rsp() - 2);
+
+	bool status = false;
+	switch ((ULONG)reg[RAX])//DBI_ACTION
+	{
+	case SYSCALL_HOOK:
+		if (m_processId == PsGetCurrentProcessId())
+			status = DbiHook(reg);
+		else//ERROR
+			KeBreak();
+
+		break;
+	case SYSCALL_TRACE_FLAG:
+		if (m_processId == PsGetCurrentProcessId())
+			status = DbiTraceEvent(reg, branchInfo);
+		else
+			status = DbiRemoteTrace(reg);
+
+		break;
+	case SYSCALL_ENUM_NEXT:
+		if (m_processId != PsGetCurrentProcessId())
+			status = DbiEnumThreads(reg);
+		else//ERROR
+			KeBreak();
+
+		break;
+	default:
+		break;
 	}
+
+	reg[RSP] = ring0rsp;
+	if (status)
+		return true;
 
 	return CSYSCALL::Syscall(reg);
 }
-
-void CProcess2Fuzz::SetUnwriteable( 
-	__in const void* addr, 
-	__in size_t size 
-	)
-{
-	CVadNodeMemRange vad_mem;
-	CVadScanner vad_scanner(PsGetCurrentThread());
-	if (vad_scanner.FindVadMemoryRange(addr, &vad_mem))
-	{
-		ULONG flags = *reinterpret_cast<ULONG*>(&vad_mem.GetFlags());
-		const BYTE* end_addr = reinterpret_cast<const BYTE*>( PAGE_ALIGN((ULONG_PTR)addr + size + PAGE_SIZE) );
-		for (const BYTE* b_addr = reinterpret_cast<const BYTE*>(addr);
-			b_addr < end_addr;
-			b_addr += PAGE_SIZE)
-		{
-			(void)m_nonWritePages.Push(CMemoryRange(b_addr, PAGE_SIZE, flags));
-		}
-					
-		/*
-		 * After initializing mem, it is stored just in VAD
-		 * at first pagefault using this addrres is parsed VAD and created particular PTE!
-		 */
-		if (!CMMU::IsValid(addr))
-			vad_scanner.SetUnwriteable(addr, size);
-		else
-			CMMU::SetUnWriteable(addr, size);
-	}
-}
-
 
 //-----------------------------------------------------------------
 // ****************** DBI TOOL API COMMUNICATION ******************
@@ -260,50 +161,9 @@ bool CProcess2Fuzz::PageFault(
 	__in_opt BRANCH_INFO* branchInfo /* = NULL */
 	)
 {
-	if (PsGetCurrentProcessId() == m_processId)
-	{
-		void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
-		if (!m_installed && m_mainImg && m_extRoutines[ExtMain])
-		{
-			m_installed = m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtMain]);
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 
-			if (m_installed) DbgPrint("\nHook set at : %p\n", ep_hook);
-		}
-	}
-
-	if (R3CommPipe(faultAddr, reg, branchInfo))
-		return true;
-
-	if (PsGetCurrentProcessId() == m_processId)
-	{
-		if (m_nonWritePages.Find(CMemoryRange(faultAddr, sizeof(BYTE))))
-		{
-			//KeBreak();
-			DbgPrint("\nnon-writeable back to writeable!!\n");
-			m_nonWritePages.Pop(CMemoryRange(faultAddr, sizeof(BYTE)));
-			if (!CMMU::IsWriteable(faultAddr))
-			{
-				CMMU::SetWriteable(faultAddr, sizeof(ULONG_PTR));
-				//+set trap after instruction + clear BTF, to set unwriteable!
-
-				//sync problem, not locked and acces via ref, via ref counting ...
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-__checkReturn
-bool CProcess2Fuzz::R3CommPipe( 
-	__in BYTE* faultAddr, 
-	__inout ULONG_PTR reg[REG_COUNT],
-	__in BRANCH_INFO* branchInfo
-	)
-{
-	IRET* iret = PPAGE_FAULT_IRET(reg);
-
+//HACKY PART OF PAGEFAULT >>> should be moved to more appropriate place ...
 	if (FAST_CALL == (ULONG_PTR)iret->Return)
 	{
 		DbgPrint("\nHV FastIOCall - callback");
@@ -311,155 +171,308 @@ bool CProcess2Fuzz::R3CommPipe(
 		return false;
 	}
 
-	//should be encapsulated under if (FAST_CALL == reg[DBI_IOCALL]) + second if, under if (PsGetCurrentProcessId() == m_processId)
-	if (iret->Return == faultAddr)
+	if (PsGetCurrentProcessId() == m_processId)
 	{
-		if (PsGetCurrentProcessId() != m_processId)
-		{
-			DbgPrint("\nstrange page fault\n");
-			KeBreak();
-		}
-
-		if (!branchInfo)
-		{
-			KeBreak();
-			return false;
-		}
-
-
 		CThreadEvent* fuzz_thread;
-		if (!m_threads.Find(CThreadEvent(), &fuzz_thread))
+		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
-			DbgPrint("\nunknown thread\n");
-			KeBreak();
-		}
-
-		if (iret->Return == branchInfo->StackPtr)
-		{
-			DbgPrint("\n!!SmartTracer! %p == %s\n", iret->Return, m_stacks.Find(reinterpret_cast<const ULONG_PTR*>(iret->Return)) ? "in stacks..." : "not in stack ?!");
-
-			if (!fuzz_thread->Stack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
+			if (m_unresolvedThreads.Pop(fuzz_thread->ThreadId()))
 			{
-				DbgPrint("\nnot resolved stack range!!\n");
-				KeBreak();
+				if (!fuzz_thread->ResolveStack())
+				{
+					m_unresolvedThreads.Push(fuzz_thread->ThreadId());
+					return false;
+				}
+
+				// { ************************** INSTAL EP HOOK ************************** 
+				if (!m_installed && m_mainImg && m_extRoutines[ExtHook])
+				{
+					void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
+					m_installed = m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtHook]);
+
+					if (m_installed) DbgPrint("\nHook set at : %p\n", ep_hook);
+				}
+				// } ************************** INSTAL EP HOOK ************************** 
 			}
-			//handle branch tracing - callback from HV
-			iret->Return = m_extRoutines[ExtTrapTrace];
-			return true;
+
+			// { ************************** HANDLE HV TRAP EXIT ************************** 
+			if (iret->Return == faultAddr)
+			{
+				if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
+				{
+					if (iret->Return == branchInfo->StackPtr)
+					{
+						//handle branch tracing - callback from HV
+						iret->Return = m_extRoutines[ExtTrapTrace];
+						return true;
+					}
+				}
+			}
+			// } ************************** HANDLE HV TRAP EXIT ************************** 
 		}
 	}
+//HACKY PART OF PAGEFAULT >>> should be moved to more appropriate place ...
 
+//X86 specific ...
 	if (FAST_CALL == reg[DBI_IOCALL])
 	{
-		if (m_loadedImgs.Find(CIMAGEINFO_ID(iret->Return)) &&
-			(ULONG_PTR)iret->Return + SIZEOF_DBI_FASTCALL == reg[DBI_R3TELEPORT])
-		{
-			DbgPrint("\n reg[DBI_RETURN] %p [%p]", iret->Return, reg[DBI_RETURN]);
+		//additional check if it is communication from r3 dbi-monitor
+		if ((ULONG_PTR)iret->Return + SIZEOF_DBI_FASTCALL == reg[DBI_R3TELEPORT])
+			return Syscall(reg, branchInfo);
+	}
+//X86 specific ...
 
-			if (PsGetCurrentProcessId() == m_processId)
+
+// { ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
+	if (PsGetCurrentProcessId() == m_processId)
+	{
+		if (((ULONG_PTR)faultAddr & 0xFFF) == 0x367)
+		{
+			CVadScanner vad_scanner(PsGetCurrentThread());
+						
+			CVadNodeMemRange vad_mem;
+			if (vad_scanner.FindVadMemoryRange(faultAddr, &vad_mem))
+				(void)m_mem2watch.Push(CMemoryRange(reinterpret_cast<BYTE*>(PAGE_ALIGN(faultAddr)), PAGE_SIZE, vad_mem.GetFlags().UFlags | DIRTY_FLAG));
+		}
+
+		CMemoryRange* mem;
+		if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(BYTE)), &mem))
+		{
+			if (mem->MatchFlags(DIRTY_FLAG))
 			{
 				CThreadEvent* fuzz_thread;
-				if (m_threads.Find(CThreadEvent(), &fuzz_thread))
+				if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
+					fuzz_thread->SetMemoryAccess(faultAddr, iret->ErrorCode.UErrCode, mem->Begin(), mem->GetSize());
+
+				mem->SetFlags(mem->GetFlags() & ~DIRTY_FLAG);
+
+				//not wrmsr but instead DEBUG REGISTERS!! -> per thread!
+				//disable_branchtrace(); //-> VMX.cpp initialize vmm : vmwrite(VMX_VMCS64_GUEST_DR7, 0x400);
+
+				wrmsr(IA32_DEBUGCTL, ~(BTF | LBR));//disable BTF -> special handling for wrmsr in HV
+				iret->Flags |= TRAP; 
+
+				//CMMU::SetWriteable(faultAddr, sizeof(ULONG_PTR));
+				if (CMMU::IsAccessed(faultAddr))
 				{
-					switch (reg[DBI_ACTION])
+					CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));
+					return true;
+				}
+			}
+		}
+	}
+// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
+
+	return false;
+}
+
+__checkReturn
+bool CProcess2Fuzz::DbiHook( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	CThreadEvent* fuzz_thread;
+	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
+	{
+		CImage* img;
+		if (GetImage(reinterpret_cast<void*>(reg[DBI_RETURN]), &img))
+			return fuzz_thread->HookEvent(img, reg, &m_mem2watch);
+	}
+
+	return false;
+}
+
+__checkReturn
+bool CProcess2Fuzz::DbiTraceEvent( 
+	__inout ULONG_PTR reg[REG_COUNT],
+	__in BRANCH_INFO* branchInfo
+	)
+{
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
+
+	CThreadEvent* fuzz_thread;
+	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
+	{
+		CImage* img;
+		if (GetImage(iret->Return, &img))
+		{
+			//handle x86 -> x64, x64 -> x86 calls
+			if (branchInfo->SrcEip != MM_LOWEST_USER_ADDRESS)
+			{
+				branchInfo->Cr2 = NULL;
+
+				CImage* dst_img;
+				if (GetImage(branchInfo->DstEip, &dst_img))
+				{
+					CImage* src_img;
+					if (GetImage(branchInfo->SrcEip, &src_img))
 					{
-					case SYSCALL_HOOK:
+						if (src_img->Is64() != dst_img->Is64() || src_img->IsSystem() || dst_img->IsSystem())
 						{
-							CIMAGEINFO_ID* img;
-							if (m_loadedImgs.Find(CIMAGEINFO_ID(reinterpret_cast<void*>(reg[DBI_RETURN])), &img))
-								return fuzz_thread->HookEvent(img->Value, reg);
-						}
-						break;
-					case  SYSCALL_TRACE_FLAG:
-						{
-							CIMAGEINFO_ID* img;
-							if (m_loadedImgs.Find(CIMAGEINFO_ID(iret->Return), &img))
+							CImage* target_img;
+							if (GetImage(reinterpret_cast<void*>(reg[DBI_RETURN]), &target_img))
 							{
-								//handle x86 -> x64, x64 -> x86 calls
-								CIMAGEINFO_ID* img_id;
+								target_img->SetUpNewRelHook(reinterpret_cast<void*>(reg[DBI_RETURN]), m_extRoutines[ExtHook]);
+								branchInfo->Flags &= (~TRAP);
+								DbgPrint("-----------> %p %p %p", branchInfo->DstEip, branchInfo->SrcEip, reg[DBI_RETURN]);
 
-								CImage* dst_img;
-								if (m_loadedImgs.Find(CIMAGEINFO_ID(branchInfo->DstEip), &img_id) && img_id->Value)
-								{
-									dst_img = img_id->Value;
-									CImage* src_img;
-									if (m_loadedImgs.Find(CIMAGEINFO_ID(branchInfo->SrcEip), &img_id) && img_id->Value)
-									{
-										src_img = img_id->Value;
-
-										if (src_img->Is64() != dst_img->Is64() || src_img->IsSystem() || dst_img->IsSystem())
-										{
-											if (m_loadedImgs.Find(CIMAGEINFO_ID(reinterpret_cast<const void*>(reg[DBI_RETURN])), &img_id) && img_id->Value)
-											{
-												img_id->Value->SetUpNewRelHook(reinterpret_cast<void*>(reg[DBI_RETURN]), m_extRoutines[ExtMain]);
-												branchInfo->Flags &= (~TRAP);
-												DbgPrint("-----------> %p %p %p", branchInfo->DstEip, branchInfo->SrcEip, reg[DBI_RETURN]);
-											}
-										}
-									}
-								}
-
-								return fuzz_thread->SmartTraceEvent(img->Value, reg, *branchInfo, m_loadedImgs);
 							}
 						}
-						break;
-					default:
-						DbgPrint("\nuknown DBI ACTION!\n");
-						KeBreak();
-						break;
+
+
+						DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG : %p)> : >> %p -%x [%ws (%s)] %p -%x [%ws (%s)] | dbg -> %ws //%p\n", 
+							branchInfo->Flags,
+							branchInfo->SrcEip, (ULONG_PTR)branchInfo->SrcEip - (ULONG_PTR)src_img->Image().Begin(), src_img->ImageName().Buffer, src_img->Is64() ? "x64" : "x86",
+							branchInfo->DstEip, (ULONG_PTR)branchInfo->DstEip - (ULONG_PTR)dst_img->Image().Begin(), dst_img->ImageName().Buffer, dst_img->Is64() ? "x64" : "x86",
+							img->ImageName().Buffer,  
+							reg[DBI_RETURN]);
 					}
 				}
 			}
 			else
 			{
-				//enum threads ?
-				switch (reg[DBI_ACTION])
-				{
-				case SYSCALL_ENUM_NEXT:
-					{
-						DbgPrint("SYSCALL_ENUM_NEXT");
-						CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_INFO_OUT]), sizeof(CID_ENUM));
-						CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.Map());
-						if (cid)
-						{
-							CThreadEvent* fuzz_thread = NULL;
-
-							if (!cid->ThreadId)
-								(void)m_threads.Find(CThreadEvent(NULL), &fuzz_thread);
-							else
-								(void)m_threads.GetNext(CThreadEvent((HANDLE)((ULONG_PTR)cid->ThreadId)), &fuzz_thread);
-
-							if (fuzz_thread)
-							{
-								cid->ProcId = m_processId;
-								cid->ThreadId = fuzz_thread->ThreadId();
-							}
-
-							iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-							return true;
-						}
-					}
-					break;
-				case SYSCALL_TRACE_FLAG:
-					{
-						CThreadEvent* fuzz_thread;
-						if (m_threads.Find(CThreadEvent((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], NULL), &fuzz_thread))
-							return fuzz_thread->SmartTrace(reg);
-					}
-					break;
-				default:
-					break;
-				}
-				DbgPrint("\nunresolved MONITOR event\n");
+				DbgPrint("\nLBR OFF\n");
 				KeBreak();
+				CMemoryRange* mem;
+				if (m_mem2watch.Find(CMemoryRange(reinterpret_cast<const BYTE*>(fuzz_thread->GetMemoryAccess().Memory), sizeof(ULONG_PTR)), &mem) &&
+					!mem->MatchFlags(DIRTY_FLAG))
+				{
+					mem->SetFlags(mem->GetFlags() | DIRTY_FLAG);
+					DbgPrint("\n II. round : %p %s %s\n", fuzz_thread->GetMemoryAccess().Memory, CMMU::IsValid(fuzz_thread->GetMemoryAccess().Memory) ? "is valid" : "is NOT valid", CMMU::IsAccessed(fuzz_thread->GetMemoryAccess().Memory) ? "is accesed already" : "NOT accesed yet!");
+					DbgPrint("\n !!!!!!!!!!!!!!! cr2 is in list .. %p %p\n", fuzz_thread->GetMemoryAccess().Memory, readcr2());
+					KeBreak();
+					CMMU::SetInvalid(fuzz_thread->GetMemoryAccess().Memory, sizeof(ULONG_PTR));
+				}
+				else
+				{
+					DbgPrint("\n cr2 not in list .. %p %p\n", fuzz_thread->GetMemoryAccess().Memory, readcr2());
+					KeBreak();
+				}
+			}
+
+			return fuzz_thread->SmartTraceEvent(img, reg, *branchInfo);
+		}
+
+	}
+	
+	return false;
+}
+
+__checkReturn
+bool CProcess2Fuzz::DbiRemoteTrace( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	CThreadEvent* fuzz_thread;
+	if (GetFuzzThread((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], &fuzz_thread))
+		return fuzz_thread->SmartTrace(reg);
+
+	return false;
+}
+
+__checkReturn
+bool CProcess2Fuzz::DbiEnumThreads( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
+
+	CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_INFO_OUT]), sizeof(CID_ENUM));
+	CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.Map());
+	if (cid)
+	{
+		THREAD* thread = NULL;
+		if (!cid->ThreadId.Value)
+			(void)m_threads.Find(NULL, &thread);
+		else
+			(void)m_threads.GetNext(cid->ThreadId.Value, &thread);
+
+		if (thread && thread->Value)
+		{
+			cid->ProcId.Value = m_processId;
+			cid->ThreadId.Value = thread->Value->ThreadId();
+		}
+
+		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+		return true;
+	}
+	return false;
+}
+
+__checkReturn
+bool CProcess2Fuzz::DbiEnumMemory( 
+	__inout ULONG_PTR reg[REG_COUNT]
+)
+{
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
+
+	CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_INFO_OUT]), sizeof(MEMORY_ENUM));
+	MEMORY_ENUM* mem = reinterpret_cast<MEMORY_ENUM*>(auto_mem.Map());
+	if (mem)
+	{
+		CVadScanner vad_scanner(PsGetCurrentThread());
+
+		CVadNodeMemRange vad_mem;
+		//NULL is equivalent getlowerbound
+		if (vad_scanner.GetNextVadMemoryRange(mem->Begin.Value, &vad_mem))
+		{
+			mem->Begin.Value = vad_mem.Begin();
+			mem->Size.Value = vad_mem.GetSize();
+			mem->Flags.Value = vad_mem.GetFlags().UFlags;
+		}
+
+		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+		return true;
+	}
+	return false;
+}
+
+__checkReturn
+bool CProcess2Fuzz::DbiWatchMemoryAccess( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
+
+	DbgPrint("\n I. currthread : %p ", PsGetCurrentThreadId());
+	CEProcess eprocess(m_processId);
+	CAutoEProcessAttach process(eprocess);
+
+	if (eprocess.IsAttached())
+	{
+		DbgPrint(" > II. currthread : %p ", PsGetCurrentThreadId());
+		KeBreak();
+
+		THREAD* thread;
+		(void)m_threads.Find(NULL, &thread);
+		//is at least one thread ready ?
+		if (thread && thread->Value)
+		{
+			//get the first one ... in the future, maybe mwatch acces per thread different memories ...
+			HANDLE thread_id = thread->Value->ThreadId();
+			CEthread ethread(thread_id);
+			if (ethread.Initialize())
+			{
+				//for now support just aligned watching .. in other case more processing needed ...
+				BYTE* mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(reg[DBI_MEM2WATCH]));
+				size_t size = ALIGN(reg[DBI_SIZE2WATCH] + (reg[DBI_MEM2WATCH] - (ULONG_PTR)mem2watch) + PAGE_SIZE, PAGE_SIZE);
+
+				CVadNodeMemRange vad_mem;
+				if (ethread.VadScanner().FindVadMemoryRange(mem2watch, &vad_mem))
+				{
+					if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags | DIRTY_FLAG)))
+					{
+						for (size_t page_walker = 0; page_walker < size; page_walker += PAGE_SIZE)
+							if (CMMU::IsAccessed(mem2watch + page_walker))
+								CMMU::SetInvalid(mem2watch + page_walker, PAGE_SIZE);
+					}
+				}
+				iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
+
+				return true;
 			}
 		}
-		else
-		{
-			DbgPrint("\nstrange IRET %p -> %p\n", iret->Return, reg[DBI_R3TELEPORT]);
-			KeBreak();
-		}
-	}		
+	}
 
 	return false;
 }

@@ -21,62 +21,30 @@ EXTERN_C void syscall_instr_epilogue();
 
 EXTERN_C ULONG_PTR* get_ring3_rsp();
 
-CThreadEvent::CThreadEvent() : 
-	THREAD_INFO(PsGetCurrentThreadId()),
-	m_currentThreadInfo(NULL),
-	m_monitorThreadInfo(NULL)
-{
-	WaitForSyscallCallback = false;
-}
-
 CThreadEvent::CThreadEvent(
 	__in HANDLE threadId, 
-	__in HANDLE parentProcessId /* = NULL */
+	__in HANDLE parentProcessId
 	) : THREAD_INFO(threadId, parentProcessId),
 		m_currentThreadInfo(PsGetCurrentProcessId()),
-		m_monitorThreadInfo(parentProcessId)
+		m_monitorThreadInfo(parentProcessId),
+		m_ethread(threadId)
 {
-	WaitForSyscallCallback = false;
 }
 
 
-//--------------------------------------------------------------
-// ****************** MEMORY MNGMNT DBI UTILS ******************
-//--------------------------------------------------------------
+void CThreadEvent::SetMemoryAccess( 
+	__in const BYTE* faultAddr,
+	__in ULONG access,
+	__in const void* begin,
+	__in size_t size
 
-__checkReturn
-bool CThreadEvent::WaitForSyscallEpilogue()
-{
-	return WaitForSyscallCallback;
-}
-
-void CThreadEvent::SetCallbackEpilogue( 
-	__in ULONG_PTR reg[REG_COUNT], 
-	__in void* memory, 
-	__in size_t size, 
-	__in bool write, 
-	__in_opt void* pageFault /*= NULL */ 
 	)
 {
-	WaitForSyscallCallback = true;
-
-	*GeneralPurposeContext = *reg;
-	LastMemoryInfo.SetInfo(memory, size, write);
-
-	//invoke SYSCALL again after syscall is finished!
-	reg[RCX] -= cSyscallSize;
-	/*
-	ULONG_PTR* r3stack = get_ring3_rsp();
-	//set return againt to SYSCALL instr
-	*r3stack -= cSyscallSize;
-	*/
+	m_currentThreadInfo.DbiOutContext.MemoryInfo.Memory = faultAddr;
+	m_currentThreadInfo.DbiOutContext.MemoryInfo.Access = access;
+	m_currentThreadInfo.DbiOutContext.MemoryInfo.Begin = begin;
+	m_currentThreadInfo.DbiOutContext.MemoryInfo.Size = size;
 }
-
-void CThreadEvent::EpilogueProceeded()
-{
-	WaitForSyscallCallback = false;
-}
-
 
 //--------------------------------------------------------
 // ****************** DBI TRACE HELPERS ******************
@@ -90,8 +58,8 @@ bool CThreadEvent::FlipSemaphore(
 	if (eventThreadInfo.EventSemaphor)
 	{
 		CEProcess eprocess(eventThreadInfo.ProcessId);
-		CAutoProcessAttach process(eprocess.GetEProcess());
-		if (process.IsAttached())
+		CAutoEProcessAttach process(eprocess);
+		if (eprocess.IsAttached())
 		{
 			CMdl event_semaphor(eventThreadInfo.EventSemaphor, sizeof(BYTE));
 			volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.Map());
@@ -132,10 +100,11 @@ void CThreadEvent::SetIret(
 __checkReturn
 bool CThreadEvent::HookEvent(
 	__in CImage* img, 
-	__in ULONG_PTR reg[REG_COUNT] 
+	__in ULONG_PTR reg[REG_COUNT],
+	CLockedAVL<CMemoryRange>* m_nonWritePages
 	)
 {
-	IRET* iret = PPAGE_FAULT_IRET(reg);
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 	void* ret = reinterpret_cast<void*>(reg[DBI_RETURN] - SIZE_REL_CALL);
 	DbgPrint("\n\ncheck hook : %p\n\n", ret);
 	
@@ -168,16 +137,15 @@ bool CThreadEvent::HookEvent(
 	DbgPrint("\nEROOR\n");
 	return false;
 }
-extern int gSpinac;
+
 __checkReturn
 bool CThreadEvent::SmartTraceEvent( 
 	__in CImage* img, 
 	__in ULONG_PTR reg[REG_COUNT], 
-	__in const BRANCH_INFO& branchInfo, 
-	__in CLockedAVL<CIMAGEINFO_ID>& imgs 
+	__in const BRANCH_INFO& branchInfo
 	)
 {
-	IRET* iret = PPAGE_FAULT_IRET(reg);
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 
 	BRANCH_INFO branch = branchInfo;
 
@@ -185,47 +153,14 @@ bool CThreadEvent::SmartTraceEvent(
 	{
 		m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = branch.Flags;
 		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-		
-		//temporary dbg info
-		CIMAGEINFO_ID* img_id;
-		CImage* dst_img;
-		imgs.Find(CIMAGEINFO_ID(branch.DstEip), &img_id);
-		dst_img = img_id->Value;
-		CImage* src_img;
-		imgs.Find(CIMAGEINFO_ID(branch.SrcEip), &img_id);
-		src_img = img_id->Value;
-		CImage* dbg_img;
-		imgs.Find(CIMAGEINFO_ID(iret->Return), &img_id);
-		dbg_img = img_id->Value;
 
 		SetIret(img->Is64(), reinterpret_cast<void*>(reg[DBI_IRET]), branch.DstEip, iret->CodeSegment, branch.Flags);
-
-		DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG : %p)> : >> %p -%x [%ws (%s)] %p -%x [%ws (%s)] | dbg -> %ws vs %ws\nreg[ecx] : %p ; reg[eax] : %p //%p\n", 
-			branch.Flags,
-			branch.SrcEip, (ULONG_PTR)branch.SrcEip - (ULONG_PTR)src_img->Image().Begin(), src_img->ImageName().Buffer, src_img->Is64() ? "x64" : "x86",
-			branch.DstEip, (ULONG_PTR)branch.DstEip - (ULONG_PTR)dst_img->Image().Begin(), dst_img->ImageName().Buffer, dst_img->Is64() ? "x64" : "x86",
-			img->ImageName().Buffer,  
-			dbg_img->ImageName().Buffer, 
-			m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[RCX],
-			m_currentThreadInfo.DbiOutContext.GeneralPurposeContext[RAX],
-			reg[DBI_RETURN]);
-		
+	
 		if (!FlipSemaphore(m_monitorThreadInfo))
 		{
 			DbgPrint("\nUnFlipped semaphore ...\n");
 		}
-/*
-		if ((ULONG_PTR)branch.SrcEip - (ULONG_PTR)src_img->Image().Begin() == 0x2f79f &&
-			(ULONG_PTR)branch.DstEip - (ULONG_PTR)dst_img->Image().Begin() == 0x2df9f)
-		{
-			gSpinac++;
-			if (gSpinac > 1)
-			{
-				SetIret(img->Is64(), reinterpret_cast<void*>(reg[DBI_IRET]), branch.DstEip, iret->CodeSegment, (branch.Flags & (~TRAP)));
-				KeBreak();
-			}
-		}
-*/
+
 		return true;
 	}
 
@@ -245,7 +180,7 @@ bool CThreadEvent::SmartTrace(
 	__in ULONG_PTR reg[REG_COUNT]
 )
 {
-	IRET* iret = PPAGE_FAULT_IRET(reg);
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 	m_monitorThreadInfo.ProcessId = PsGetCurrentProcessId();
 	m_monitorThreadInfo.EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
 
@@ -257,4 +192,13 @@ bool CThreadEvent::SmartTrace(
 	if (!dbg_cont)
 		KeBreak();
 	return true;
+}
+
+void CThreadEvent::MemoryProtectionEvent( 
+	__in void* memory, 
+	__in size_t size, 
+	__in bool write, 
+	__in ULONG_PTR reg[REG_COUNT] 
+	)
+{
 }

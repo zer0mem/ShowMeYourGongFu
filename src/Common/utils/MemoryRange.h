@@ -8,7 +8,8 @@
 
 #include "Range.h"
 
-class CMemoryRange : public CRange<BYTE>
+class CMemoryRange : 
+	public CRange<BYTE>
 {
 public :
 	CMemoryRange() : m_flags(0) { };
@@ -35,17 +36,22 @@ public :
 
 	__checkReturn
 	bool MatchFlags(
-		__in ULONG flags
+		__in ULONG_PTR flags
 		) const 
 	{
 		return !!(m_flags & flags);
 	}
 
 	void SetFlags(
-		__in ULONG flags
+		__in ULONG_PTR flags
 		)
 	{
 		m_flags = flags;
+	}
+
+	ULONG_PTR GetFlags()
+	{
+		return m_flags;
 	}
 
 protected :

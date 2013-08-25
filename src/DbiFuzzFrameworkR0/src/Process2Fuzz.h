@@ -13,13 +13,11 @@
 #include "../../Common/utils/SyscallCallbacks.hpp"
 #include "../../Common/utils/MemoryRange.h"
 
-#include "../../Common/utils/DelayLoadEntryPointHook.hpp"
-
 #include "ThreadEvent.h"
 #include "ImageInfo.h"
 
 class CProcess2Fuzz : 
-	public CProcessContext,
+	public CProcessContext<CThreadEvent, CHILD_PROCESS, CImage>,
 	public CSyscallCallbacks
 {
 public:
@@ -29,23 +27,9 @@ public:
 		__inout_opt PS_CREATE_NOTIFY_INFO* createInfo
 		);
 
-	~CProcess2Fuzz();
-
 	static
 	__checkReturn
 	bool WatchProcess(
-		__inout PEPROCESS eprocess,
-		__in HANDLE processId,
-		__inout_opt PS_CREATE_NOTIFY_INFO* createInfo
-		);
-
-	void ProcessNotifyRoutineEx(
-		__inout PEPROCESS eprocess,
-		__in HANDLE processId,
-		__inout_opt PS_CREATE_NOTIFY_INFO* createInfo
-		);
-
-	void ChildProcessNotifyRoutineEx(
 		__inout PEPROCESS eprocess,
 		__in HANDLE processId,
 		__inout_opt PS_CREATE_NOTIFY_INFO* createInfo
@@ -57,21 +41,10 @@ public:
 		__in IMAGE_INFO* imageInfo
 		);
 
-	void ThreadNotifyRoutine(
-		__in HANDLE processId,
-		__in HANDLE threadId,
-		__in BOOLEAN create
-		);
-
-	void RemoteThreadNotifyRoutine(
-		__in HANDLE processId,
-		__in HANDLE threadId,
-		__in BOOLEAN create
-		);
-
 	__checkReturn
-	virtual bool Syscall(
-		__inout ULONG_PTR reg[REG_COUNT]
+	bool Syscall(
+		__inout ULONG_PTR reg[REG_COUNT],
+		__in_opt BRANCH_INFO* branchInfo = NULL
 		);
 
 	__checkReturn
@@ -83,6 +56,40 @@ public:
 
 protected:
 	__checkReturn
+	__forceinline
+	bool GetFuzzThread(
+		__in HANDLE threadId,
+		__inout CThreadEvent** fuzzThread = NULL
+		)
+	{
+		THREAD* thread;
+		if (m_threads.Find(threadId, &thread) && thread->Value)
+		{
+			if (fuzzThread)
+				*fuzzThread = thread->Value;
+			return true;
+		}
+		return false;
+	}
+
+	__checkReturn
+	__forceinline
+	bool GetImage(
+		__in const void* addr,
+		__inout CImage** img = NULL
+		)
+	{
+		IMAGE* img_info;
+		if (m_loadedImgs.Find(CRange<void>(addr), &img_info) && img_info->Value)
+		{
+			if (img)
+				*img = img_info->Value;
+			return true;
+		}
+		return false;
+	}
+
+	__checkReturn
 	bool VirtualMemoryCallback(
 		__in void* memory,
 		__in size_t size,
@@ -91,30 +98,44 @@ protected:
 		__inout_opt BYTE* buffer = NULL
 		) override;
 
-	void SetUnwriteable(
-		__in const void* addr,
-		__in size_t size
+private:
+	__checkReturn
+	bool DbiHook(
+		__inout ULONG_PTR reg[REG_COUNT]
 		);
 
 	__checkReturn
-	bool R3CommPipe( 
-		__in BYTE* faultAddr, 
+	bool DbiTraceEvent(
 		__inout ULONG_PTR reg[REG_COUNT],
 		__in BRANCH_INFO* branchInfo
 		);
 
+	__checkReturn
+	bool DbiRemoteTrace(
+		__inout ULONG_PTR reg[REG_COUNT]
+	);
+
+	__checkReturn
+	bool DbiEnumThreads(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+
+	__checkReturn
+	bool DbiEnumMemory(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+		
+	__checkReturn
+	bool DbiWatchMemoryAccess(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+
 protected:
-	bool m_internalError;
-	CImage* m_mainImg;
 	bool m_installed;
 
 	const void* m_extRoutines[ExtCount];
 
-	CLockedAVL<CThreadEvent> m_threads;
-	CLockedAVL<CHILD_PROCESS> m_childs;
-	CLockedAVL<CIMAGEINFO_ID> m_loadedImgs;
-	CLockedAVL<CMemoryRange> m_nonWritePages;
-	CLockedAVL< CRange<ULONG_PTR> > m_stacks;
+	CLockedAVL<CMemoryRange> m_mem2watch;
 };
 
 #endif //__FUZZPROCESS_H__

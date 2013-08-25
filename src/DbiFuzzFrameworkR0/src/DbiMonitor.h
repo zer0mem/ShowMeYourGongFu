@@ -70,7 +70,10 @@ protected:
 	void CPUIDCALLBACK(
 		__inout ULONG_PTR reg[REG_COUNT] 
 	);
-
+	static 
+	void DisableBTF(
+		__inout ULONG_PTR reg[REG_COUNT] 
+	);
 
 	virtual __checkReturn
 	bool SetVirtualizationCallbacks();

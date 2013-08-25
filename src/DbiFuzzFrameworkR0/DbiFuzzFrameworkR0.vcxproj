@@ -274,7 +274,6 @@
     <ClCompile Include="..\Common\base\libc.cpp" />
     <ClCompile Include="..\Common\Kernel\Apc.cpp" />
     <ClCompile Include="..\Common\Kernel\MemoryMapping.cpp" />
-    <ClCompile Include="..\Common\utils\ProcessCtx.cpp" />
     <ClCompile Include="..\Common\utils\VADWalker.cpp" />
     <ClCompile Include="Common\Constants.cpp" />
     <ClCompile Include="src\DbiMonitor.cpp" />

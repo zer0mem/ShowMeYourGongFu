@@ -25,6 +25,12 @@ struct CRange
 		__in const TYPE* end
 		) : m_begin((ULONG_PTR)begin), m_end((ULONG_PTR)end) { };
 
+	//implicit
+	CRange(
+		__in const TYPE* begin, 
+		__in size_t size
+		) : m_begin((ULONG_PTR)begin), m_end((ULONG_PTR)begin + size) { };
+
 public:
 	bool IsInRange(
 		__in const TYPE* address
@@ -47,6 +53,11 @@ public:
 		)
 	{ 
 		m_end = max(m_begin + size - 1, m_end); 
+	};
+
+	size_t GetSize()
+	{ 
+		return (m_end - m_begin + 1); 
 	};
 
 	void Reset(

@@ -15,7 +15,7 @@ enum
 {
 	ExtTrapTrace,
 	ExtInfo,
-	ExtMain,
+	ExtHook,
 	ExtCount
 };
 

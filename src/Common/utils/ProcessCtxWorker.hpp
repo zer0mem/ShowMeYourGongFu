@@ -89,26 +89,6 @@ public:
 		}
 		return false;
 	}
-
-
-	//TODO : implement shared_ptr !
-	__checkReturn
-	bool GetProcessUnsafe(
-		__in HANDLE processId,
-		__inout TYPE** out
-		)
-	{
-		PROCESS_CTX* proc_ctx_id = NULL;
-		bool ret = (m_avl.Find(&PROCESS_CTX(processId), &proc_ctx_id));
-		{
-			if (proc_ctx_id && proc_ctx_id->Value)
-			{
-				*out = proc_ctx_id->Value;
-				return ret;
-			}
-		}
-		return false;
-	}
 };
 
 #endif //__PROCESSCTXWORKER_H__

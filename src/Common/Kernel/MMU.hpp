@@ -12,6 +12,12 @@
 
 class CMMU
 {
+	enum PAGE_FLAG
+	{
+		Write,
+		Exec,
+		NoAccess
+	};
 public:
 	CMMU(
 		__in const void* address
@@ -124,10 +130,17 @@ public:
 	{
 		CMMU mmu(addr);
 		PAGE_TABLE_ENTRY pte;
-		if (mmu.GetPTE(pte))
-			return !!pte.Write;
+		return (mmu.GetPTE(pte) &&  pte.Write);
+	}
 
-		return false;
+	static
+	bool IsAccessed(
+		__in const void* addr
+		)
+	{
+		CMMU mmu(addr);
+		PAGE_TABLE_ENTRY pte;
+		return (mmu.GetPTE(pte) && pte.Accessed);
 	}
 
 	static
@@ -136,19 +149,7 @@ public:
 		__in size_t size
 		)
 	{
-		const BYTE* end_addr = reinterpret_cast<const BYTE*>(PAGE_ALIGN((ULONG_PTR)addr + size + PAGE_SIZE));
-		for (addr = reinterpret_cast<const BYTE*>(addr); 
-			addr < end_addr; 
-			addr = reinterpret_cast<const void*>((ULONG_PTR)addr + PAGE_SIZE))
-		{
-			CMMU mmu(addr);
-			PAGE_TABLE_ENTRY pte;
-			if (mmu.GetPTE(pte))
-			{
-				pte.Write = 1;
-				mmu.SetPTE(pte);
-			}
-		}
+		SetPage<Write, 1>(addr, size);
 	}
 
 	static
@@ -157,19 +158,43 @@ public:
 		__in size_t size
 		)
 	{
-		const BYTE* end_addr = reinterpret_cast<const BYTE*>(PAGE_ALIGN((ULONG_PTR)addr + size + PAGE_SIZE));
-		for (addr = reinterpret_cast<const BYTE*>(addr); 
-			addr < end_addr; 
-			addr = reinterpret_cast<const void*>((ULONG_PTR)addr + PAGE_SIZE))
-		{
-			CMMU mmu(addr);
-			PAGE_TABLE_ENTRY pte;
-			if (mmu.GetPTE(pte))
-			{
-				pte.Write = 0;
-				mmu.SetPTE(pte);
-			}
-		}
+		SetPage<Write, 0>(addr, size);
+	}
+
+	static
+	void SetValid(
+		__in const void* addr,
+		__in size_t size
+		)
+	{
+		SetPage<NoAccess, 0>(addr, size);
+	}
+
+	static
+	void SetInvalid(
+		__in const void* addr,
+		__in size_t size
+		)
+	{
+		SetPage<NoAccess, 1>(addr, size);
+	}
+	
+	static
+	void SetExecutable(
+		__in const void* addr,
+		__in size_t size
+		)
+	{
+		SetPage<Exec, 1>(addr, size);
+	}
+
+	static
+	void SetUnExecutable(
+		__in const void* addr,
+		__in size_t size
+		)
+	{
+		SetPage<Exec, 0>(addr, size);
 	}
 
 protected:
@@ -216,9 +241,48 @@ private:
 	PAGE_TABLE_ENTRY* PTE()
 	{
 		PAGE_TABLE_ENTRY* pte = reinterpret_cast<PAGE_TABLE_ENTRY*>(m_pte.GetVirtualAddress());
-		return ( (pte && pte->Valid) ? pte : NULL );
+		return pte;
 	}
-	
+
+
+//compiler will optimize and inline function
+	template<size_t FLAG, BOOL VAL>
+	__forceinline
+	static
+	void SetPage(
+		__in const void* addr,
+		__in size_t size
+		)
+	{
+		const BYTE* end_addr = reinterpret_cast<const BYTE*>(PAGE_ALIGN((ULONG_PTR)addr + size + PAGE_SIZE));
+		for (addr = reinterpret_cast<const BYTE*>(addr); 
+			addr < end_addr; 
+			addr = reinterpret_cast<const void*>((ULONG_PTR)addr + PAGE_SIZE))
+		{
+			CMMU mmu(addr);
+			PAGE_TABLE_ENTRY pte;
+			if (mmu.GetPTE(pte))
+			{
+				switch (FLAG)
+				{
+				case Write:
+					pte.Write = VAL;
+					break;
+				case Exec:
+					pte.NoExecute = !VAL;
+					break;
+				case NoAccess:
+					pte.Valid = !VAL;
+					break;
+				default:
+					break;
+				}
+
+				mmu.SetPTE(pte);
+			}
+		}
+	}
+
 protected:
 	CDispatchLvl m_irql;
 

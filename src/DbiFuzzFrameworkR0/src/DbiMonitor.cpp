@@ -88,6 +88,7 @@ bool CDbiMonitor::SetVirtualizationCallbacks()
 		return false;
 
 	m_traps[VMX_EXIT_RDMSR] = (ULONG_PTR)HookProtectionMSR;
+	m_traps[VMX_EXIT_WRMSR] = (ULONG_PTR)DisableBTF;
 	m_traps[VMX_EXIT_EXCEPTION] = (ULONG_PTR)TrapHandler;
 	m_traps[VMX_EXIT_DRX_MOVE] = (ULONG_PTR)AntiPatchGuard;
 	
@@ -199,11 +200,24 @@ EXTERN_C void* SysCallCallback(
 	__inout ULONG_PTR reg [REG_COUNT]
 	)
 {
+	BRANCH_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
+
 	CProcess2Fuzz* fuzzed_proc;
 	if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 	{
-		if (fuzzed_proc->Syscall(reg))
+		if (fuzzed_proc->Syscall(reg, &branch_info))
 			return NULL;
+	}
+	else
+	{
+		if (FAST_CALL == reg[DBI_IOCALL] && (ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
+		{
+			if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc))
+			{
+				if (fuzzed_proc->Syscall(reg))
+					return NULL;
+			}
+		}
 	}
 
 	ULONG core_id = KeGetCurrentProcessorNumber();
@@ -212,61 +226,39 @@ EXTERN_C void* SysCallCallback(
 	
 	return CDbiMonitor::GetInstance().GetSysCall((BYTE)core_id);
 }
-int gSpinac = 0;
+
 //handle acces to protected memory
 EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	if (gSpinac > 1)
-	{
-		DbgPrint("\nPageFault");
-		DbgPrint(" %p", readcr2());
-		IRET* iret = PPAGE_FAULT_IRET(reg);
-		DbgPrint(" %p", iret->Return);
-		DbgPrint(" %p\n", iret->Flags);
-	}
 	//PageFault hooked == BranchInfo have to find valid ptr
 	BRANCH_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
 
 	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
-#define USER_MODE_CS 0x1
-	IRET* iret = PPAGE_FAULT_IRET(reg);
-
-	for (int i = 0; !CDbiMonitor::GetInstance().PrintfStack.IsEmpty() && i < 0x10; i++)
-	{
-		ULONG_PTR info = CDbiMonitor::GetInstance().PrintfStack.Pop();
-		DbgPrint("\n >>PrintfStack : %p\n", info);
-	}
+	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 
 	//in kernelmode can cause another PF and skip recursion handling :P
 
 	//previous mode == usermode ?
+#define USER_MODE_CS 0x1
 	if (iret->CodeSegment & USER_MODE_CS)//btf HV callback
 	{
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 		{
-			DbgPrint("\nPageFault in monitored process %p\n", fault_addr);
+			DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
 			if (fuzzed_proc->PageFault(fault_addr, reg, &branch_info))
 				return NULL;
 		}
 		else
 		{
-			if (FAST_CALL == reg[DBI_IOCALL])
+			if (FAST_CALL == reg[DBI_IOCALL] && (ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
 			{
-				if ((ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
+				if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc))
 				{
-					if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc))
-					{
-						if (fuzzed_proc->PageFault(fault_addr, reg))
-						{
-							DbgPrint("\nremote acces OK -> %p %p %x\n", iret->Return, iret->Flags, iret->CodeSegment);
-							return NULL;
-						}
-
-						DbgPrint("\nremote acces failed\n");
-					}
+					if (fuzzed_proc->PageFault(fault_addr, reg))
+						return NULL;
 				}
 			}
 		}
@@ -290,28 +282,35 @@ void CDbiMonitor::TrapHandler(
 		ULONG_PTR ins_addr;
 		if (!vmread(VMX_VMCS64_GUEST_RIP, &ins_addr))//original 'ret'-addr
 		{
-			ins_addr -= ins_len;
-
-			ULONG_PTR src = 0;
-			for (BYTE i = (BYTE)rdmsr(MSR_LASTBRANCH_TOS); i >= 0; i--)
-			{
-				if (rdmsr(MSR_LASTBRANCH_0_TO_IP + i) == ins_addr)
-				{
-					src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
-
-					break;
-				}
-			}
-
 			//set-up next BTF hook
 			ULONG_PTR rflags = 0;
 			if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
 			{
 				if (rflags & TRAP)
 				{
+					ins_addr -= ins_len;
+
+					ULONG_PTR src = (ULONG_PTR)MM_LOWEST_USER_ADDRESS;
+					ULONG_PTR msr_btf_part;
+					vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part);
+					if (msr_btf_part & BTF)
+					{
+						for (BYTE i = (BYTE)rdmsr(MSR_LASTBRANCH_TOS); i >= 0; i--)
+						{
+							if (rdmsr(MSR_LASTBRANCH_0_TO_IP + i) == ins_addr)
+							{
+								src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
+								break;
+							}
+						}
+					}
+					else
+					{
+						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, (msr_btf_part | BTF | LBR));
+					}
+
 					if (CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
 					{
-
 						BRANCH_INFO* branch_i = CDbiMonitor::GetInstance().BranchInfoUnsafe(CVirtualizedCpu::GetCoreId(reg));
 						if (branch_i)
 						{
@@ -320,9 +319,8 @@ void CDbiMonitor::TrapHandler(
 								branch_i->DstEip = reinterpret_cast<const void*>(ins_addr);
 								branch_i->SrcEip = reinterpret_cast<const void*>(src);
 
+								branch_i->Cr2 = reinterpret_cast<BYTE*>(readcr2());
 								branch_i->Flags = rflags;
-
-								//CDbiMonitor::GetInstance().GetBranchStack().Push(*branch_i);
 
 								//disable trap flag and let handle it by PageFault Hndlr
 								vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
@@ -336,6 +334,7 @@ void CDbiMonitor::TrapHandler(
 			}
 		}
 	}
+
 	ULONG_PTR rflags = 0;
 	vmread(VMX_VMCS_GUEST_RFLAGS, &rflags);
 	vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
@@ -364,6 +363,24 @@ EXTERN_C void* RdmsrHook(
 //-----------------------------------------------------------
 // ****************** HYPERVISOR CALLBACKS ******************
 //-----------------------------------------------------------
+
+void CDbiMonitor::DisableBTF( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	if (IA32_DEBUGCTL == reg[RCX])
+	{
+		//handle just dword-low
+		ULONG_PTR msr_btf_part;
+		vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part);
+		reg[RAX] &= msr_btf_part;
+
+		vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, reg[RAX]);
+		vmread(VMX_VMCS_GUEST_DEBUGCTL_HIGH, &reg[RDX]);
+	}
+
+	wrmsr((ULONG)reg[RCX], (reg[RDX] << 32) | (ULONG)reg[RAX]);
+}
 
 //pageguard - alice in wonderland
 

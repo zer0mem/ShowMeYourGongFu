@@ -62,14 +62,23 @@ protected:
 
 CVadScanner::CVadScanner( 
 	__in PETHREAD ethread
-	) : m_thread(ethread)
+	)
 {
-	m_process = IoThreadToProcess(ethread);
+	Init(ethread);
 }
 
-CVadScanner::~CVadScanner()
+CVadScanner::CVadScanner() :
+	m_thread(NULL),
+	m_process(NULL)
 {
+}
 
+void CVadScanner::Init( 
+	__in PETHREAD ethread 
+	)
+{
+	m_thread = ethread;
+	m_process = IoThreadToProcess(ethread);
 }
 
 __checkReturn 
@@ -120,8 +129,41 @@ bool CVadScanner::FindVadMemoryRange(
 		CAutoVadShort auto_vad(addr);
 		if (auto_vad.GetFakeVadShort(&mem_find))
 		{
-			VAD_SHORT* mem_descryptor;
+			VAD_SHORT* mem_descryptor = NULL;
 			if (vad.Find(mem_find, &mem_descryptor))
+			{
+				CVadNodeMemRange mem(mem_descryptor);
+				*vadMemRange = mem;
+				return true;
+			}
+
+		}
+	}
+	return false;
+}
+
+__checkReturn
+bool CVadScanner::GetNextVadMemoryRange( 
+	__in const void* addr, 
+	__inout CVadNodeMemRange* vadMemRange
+	)
+{
+	CApcLvl irql;
+	CVADScanLock vad_lock(m_process);
+	if (vad_lock.IsLocked())
+	{
+		CVadWalker vad(m_process);
+
+		VAD_SHORT* mem_find;
+		CAutoVadShort auto_vad(addr);
+		if (auto_vad.GetFakeVadShort(&mem_find))
+		{
+			VAD_SHORT* mem_descryptor = NULL;
+			if (vad.Find(mem_find, &mem_descryptor))
+				if (!vad.GetNext(const_cast<const VAD_SHORT**>(&mem_descryptor)))
+					return false;
+
+			if (mem_descryptor)
 			{
 				CVadNodeMemRange mem(mem_descryptor);
 				*vadMemRange = mem;
@@ -132,7 +174,6 @@ bool CVadScanner::FindVadMemoryRange(
 	return false;
 }
 
-__checkReturn
 bool CVadScanner::SetVadMemoryRangeFlags( 
 	__in const void* addr, 
 	__in MMVAD_FLAGS flags
@@ -177,32 +218,11 @@ void CVadScanner::SetUnwriteable(
 				continue;
 
 			MMVAD_FLAGS flags = vad_mem.GetFlags();
+			
 			BYTE low_prot = vad_mem.IsExecuteable() ? 3 /*PAGE_EXECUTE_READ*/ : 1 /*PAGE_READONLY*/;
 			flags.Protection = (flags.Protection & (~7)) | low_prot;
-
-			(void)SetVadMemoryRangeFlags(reinterpret_cast<const BYTE*>((ULONG_PTR)addr + size), flags);
-		}
-	}
-}
-
-__checkReturn
-void CVadScanner::SetWriteable( 
-	__in const void* addr,
-	__in size_t size
-	)
-{
-	void* end_addr = reinterpret_cast<BYTE*>((ULONG_PTR)addr + size);
-	for (CVadNodeMemRange vad_mem; 
-		end_addr > addr && FindVadMemoryRange(addr, &vad_mem); 
-		addr = vad_mem.End() + 1)
-	{
-		if (vad_mem.IsWriteable())
-		{
-			MMVAD_FLAGS flags = vad_mem.GetFlags();
-			BYTE low_prot = vad_mem.IsExecuteable() ? 3 /*PAGE_EXECUTE_READ*/ : 1 /*PAGE_READONLY*/;
-			flags.Protection = (flags.Protection & (~7)) | low_prot;
-
-			(void)SetVadMemoryRangeFlags(reinterpret_cast<const BYTE*>((ULONG_PTR)addr + size), flags);
+			
+			SetVadMemoryRangeFlags(addr, flags);
 		}
 	}
 }

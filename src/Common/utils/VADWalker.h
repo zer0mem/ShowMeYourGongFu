@@ -26,7 +26,8 @@
 // ****************** VAD_NODE MEMORY RANGE ****************** 
 //------------------------------------------------------------
 
-class CVadNodeMemRange : public CMemoryRange
+class CVadNodeMemRange : 
+	public CMemoryRange
 {
 #define EXPAND(addr) (ULONG_PTR)((ULONG)(addr) << PAGE_SHIFT)
 public:
@@ -82,7 +83,12 @@ public:
 	CVadScanner(
 		__in PETHREAD ethread
 		);
-	~CVadScanner();
+
+	CVadScanner();
+
+	void Init(
+		__in PETHREAD ethread
+		);
 
 	__checkReturn 
 	bool ScanAddressSpace();
@@ -92,8 +98,13 @@ public:
 		__in const void* addr, 
 		__inout CVadNodeMemRange* vadMemRange
 		);
-
+	
 	__checkReturn
+	bool GetNextVadMemoryRange( 
+		__in const void* addr, 
+		__inout CVadNodeMemRange* vadMemRange
+		);
+
 	bool CVadScanner::SetVadMemoryRangeFlags( 
 		__in const void* addr, 
 		__in MMVAD_FLAGS flags
@@ -101,12 +112,6 @@ public:
 
 	__checkReturn
 	void SetUnwriteable(
-		__in const void* addr,
-		__in size_t size
-		);
-
-	__checkReturn
-	void SetWriteable(
 		__in const void* addr,
 		__in size_t size
 		);

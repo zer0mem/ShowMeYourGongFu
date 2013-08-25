@@ -9,13 +9,82 @@
 #include "../base/Common.h"
 #include "../base/ComparableId.hpp"
 
-class CEProcess :
+class CProcessAttach :
 	public COMPARABLE_ID<PEPROCESS>
+{
+public:
+	CProcessAttach(
+		__in_opt PEPROCESS process = NULL
+		) : COMPARABLE_ID(process)
+	{
+		m_attached = false;
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	~CProcessAttach()
+	{
+		Detach();
+	}
+
+	__checkReturn
+	bool IsAttached()
+	{
+		return m_attached;
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	bool Attach()
+	{
+		if (Id && !m_attached)
+		{
+			KeStackAttachProcess(reinterpret_cast<PRKPROCESS>(Id), &m_apcState);				
+			m_attached = true;
+			return true;
+		}
+		return false;
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	void Detach()
+	{
+		if (m_attached)
+			KeUnstackDetachProcess(&m_apcState);
+
+		m_attached = false;
+	}
+
+protected:
+	bool m_attached;
+	KAPC_STATE m_apcState;
+};
+
+class CAutoProcessAttach :
+	public CProcessAttach
+{
+public:
+	_IRQL_requires_max_(APC_LEVEL)
+	CAutoProcessAttach(
+		__in PEPROCESS process
+		) : CProcessAttach(process)
+	{
+		Attach();
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	~CAutoProcessAttach()
+	{
+		Detach();
+	}
+};
+
+class CEProcess :
+	public CProcessAttach
 {
 public:
 	explicit CEProcess(
 		__in HANDLE processId
-		) : COMPARABLE_ID(NULL)
+		) : CProcessAttach(NULL),
+			m_processId(processId)
 	{
 		if (!NT_SUCCESS(PsLookupProcessByProcessId(processId, &Id)))
 			Id = NULL;
@@ -27,47 +96,35 @@ public:
 			ObDereferenceObject(Id);
 	}
 
-	PEPROCESS GetEProcess()
+	HANDLE ProcessId()
 	{
-		return Id;
-	}
-};
-
-class CAutoProcessAttach
-{
-public:
-	_IRQL_requires_max_(APC_LEVEL)
-	CAutoProcessAttach(
-		__in PEPROCESS process
-	)
-	{
-		if (process && PsGetCurrentProcess() != process)
-		{
-			m_attached = true;
-			KeStackAttachProcess((PRKPROCESS)process, &m_apcState);
-		}
-		else
-		{
-			m_attached = false;
-		}
-	}
-
-	_IRQL_requires_max_(APC_LEVEL)
-	~CAutoProcessAttach()
-	{
-		if (m_attached)
-			KeUnstackDetachProcess(&m_apcState);
-	}
-
-	__checkReturn
-	bool IsAttached()
-	{
-		return m_attached;
+		return m_processId;
 	}
 
 protected:
-	bool m_attached;
-	KAPC_STATE m_apcState;
+	HANDLE m_processId;
+	CProcessAttach m_attach;
+};
+
+class CAutoEProcessAttach
+{
+public:
+	_IRQL_requires_max_(APC_LEVEL)
+	CAutoEProcessAttach(
+		__in CEProcess& eprocess
+		) : m_eprocess(eprocess)
+	{
+		m_eprocess.Attach();
+	}
+
+	_IRQL_requires_max_(APC_LEVEL)
+	~CAutoEProcessAttach()
+	{
+		m_eprocess.Detach();
+	}
+
+private:
+	CEProcess& m_eprocess;
 };
 
 #endif //__PROCESS_H__

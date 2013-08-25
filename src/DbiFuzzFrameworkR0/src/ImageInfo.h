@@ -25,8 +25,9 @@ class CImage :
 	void operator=(const CImage&);
 public:
 	CImage(
-		__in_opt UNICODE_STRING* fullImageName,
-		__in IMAGE_INFO* imgInfo
+		__in_opt UNICODE_STRING* fullImageName, 
+		__in HANDLE processId, 
+		__in IMAGE_INFO* imageInfo 
 		);
 
 	bool SetUpNewRelHook(
@@ -57,26 +58,6 @@ protected:
 private:
 	WCHAR* m_imgNameBuffer;
 	CLockedAVL<RELLCALLHOOK_ID> m_hooks;
-};
-
-struct CIMAGEINFO_ID :
-	public COMPARABLE_ID_PTR<CRange<void>, CImage>
-{
-	CIMAGEINFO_ID() : COMPARABLE_ID_PTR()
-	{
-		Value = NULL;
-	}
-	CIMAGEINFO_ID(
-		__in const CRange<void>& id, 
-		__in_opt CImage* val = NULL
-		) : COMPARABLE_ID_PTR(id, val)
-	{
-	}
-
-	CRange<void>& Image()
-	{
-		return Id;
-	}
 };
 
 #endif //__IMAGEINFO_H__

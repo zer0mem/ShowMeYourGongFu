@@ -43,14 +43,33 @@ typedef const void *LPCVOID;
 // ****************** DEFINE HELPERS ******************
 //-----------------------------------------------------
 
-struct IRET
+#pragma pack(push, 1)
+
+struct ERROR_CODE
 {
+	union
+	{
+		ULONG UErrCode;
+		struct  
+		{
+			ULONG_PTR Present : 1;
+			ULONG_PTR ReadAccess : 1;
+			ULONG_PTR Ring3 : 1;
+		};
+	};
+};
+
+struct PFIRET
+{
+	ERROR_CODE ErrorCode;
 	const void* Return;
 	ULONG_PTR CodeSegment;
 	ULONG_PTR Flags;
 };
 
-#define PPAGE_FAULT_IRET(reg) reinterpret_cast<IRET*>(HOOK_ORIG_RSP(reg) + 1)//skip unknown param
+#pragma pack(pop)
+
+#define PPAGE_FAULT_IRET(reg) reinterpret_cast<PFIRET*>(HOOK_ORIG_RSP(reg))//skip unknown param
 
 #define ALIGN(addr, granularity)	(ULONG_PTR)((ULONG_PTR)addr & (~(granularity - 1)))
 

@@ -27,9 +27,6 @@
     <ClCompile Include="src\DbiMonitor.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\Common\utils\ProcessCtx.cpp">
-      <Filter>Common\utils</Filter>
-    </ClCompile>
     <ClCompile Include="src\ThreadEvent.cpp">
       <Filter>src</Filter>
     </ClCompile>

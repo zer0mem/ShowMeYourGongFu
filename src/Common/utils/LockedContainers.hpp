@@ -42,7 +42,6 @@ public:
 		return m_avl.Insert(&element);
 	}
 
-	__checkReturn
 	bool Pop(
 		__in const TYPE& element
 		)

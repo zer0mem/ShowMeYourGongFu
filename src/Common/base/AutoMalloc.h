@@ -1,12 +1,7 @@
 /**
  * @file AutoMalloc.h
  * @author created by: Peter Hlavaty
- * @author created on: 2012/06/05
- * @author \n
- * @author Copyright (c) 2012 ESET, spol. s r. o.
- * @note current owner: Peter Hlavaty (peter.hlavaty@eset.sk)
- * @note IMPORTANT: Before doing any significant change to this file check your plan with the current owner to avoid unexpected behaviour.
- */
+*/
 
 #ifndef __AUTOMALLOC_H__
 #define __AUTOMALLOC_H__

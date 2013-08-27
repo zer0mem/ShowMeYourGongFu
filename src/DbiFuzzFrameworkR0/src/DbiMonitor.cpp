@@ -22,7 +22,7 @@ EXTERN_C void patchguard_hook();
 CDbiMonitor CDbiMonitor::m_instance;
 
 void* CDbiMonitor::PageFaultHandlerPtr[MAX_PROCID];
-PKEVENT CDbiMonitor::m_patchGuardEvents[MAX_PROCID];
+KEVENT CDbiMonitor::m_patchGuardEvents[MAX_PROCID];
 
 CDbiMonitor::CDbiMonitor() :
 	CSingleton(m_instance),
@@ -49,10 +49,10 @@ CDbiMonitor::~CDbiMonitor()
 	}
 
 	for (size_t i = 0; i < _countof(m_patchGuardEvents); i++)
-		if (m_patchGuardEvents[i])
+		if (&m_patchGuardEvents[i])
 		{
-			KeSetEvent(m_patchGuardEvents[i], MAXIMUM_PRIORITY, TRUE);
-			KeWaitForSingleObject(m_patchGuardEvents[i], Executive, KernelMode, FALSE, 0);
+			KeSetEvent(&m_patchGuardEvents[i], MAXIMUM_PRIORITY, TRUE);
+			KeWaitForSingleObject(&m_patchGuardEvents[i], Executive, KernelMode, FALSE, 0);
 		}
 }
 
@@ -351,7 +351,6 @@ EXTERN_C void* RdmsrHook(
 	KeBreak();
 	CDbiMonitor::InstallPageFaultHooks();
 	CDbiMonitor::DisablePatchGuard(0);
-	KeBreak();
 
 	//wait4rever : keinitilizeevent + kesetevent + kewaitforsingle object .. freeze this thread ;)
 
@@ -501,6 +500,6 @@ void CDbiMonitor::InstallPageFaultHooks()
 
 void CDbiMonitor::DisablePatchGuard( __in BYTE coreId )
 {
-	KeInitializeEvent(m_patchGuardEvents[coreId], NotificationEvent, FALSE);
-	KeWaitForSingleObject(m_patchGuardEvents[coreId], Executive, KernelMode, FALSE, 0);
+	KeInitializeEvent(&m_patchGuardEvents[coreId], NotificationEvent, FALSE);
+	KeWaitForSingleObject(&m_patchGuardEvents[coreId], Executive, KernelMode, FALSE, 0);
 }

@@ -116,7 +116,7 @@ protected:
 	void* m_syscalls[MAX_PROCID];
 	static void* PageFaultHandlerPtr[MAX_PROCID];
 
-	static PKEVENT m_patchGuardEvents[MAX_PROCID];
+	static KEVENT m_patchGuardEvents[MAX_PROCID];
 };
 
 #endif //__SYSENETER_H__

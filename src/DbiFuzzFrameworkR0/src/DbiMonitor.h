@@ -35,10 +35,12 @@ public:
 		__in BYTE coreId
 		);
 
+	static
 	void* GetPFHandler(
 		__in BYTE coreId
 		);
 
+	static
 	void SetPFHandler( 
 		__in BYTE coreId, 
 		__in void* pfHndlr 
@@ -61,6 +63,14 @@ public:
 		);
 	
 	CStack<ULONG_PTR> PrintfStack;
+
+	static
+		void InstallPageFaultHooks();
+
+	static
+		void DisablePatchGuard(
+		__in BYTE coreId
+		);
 
 protected:
 	static
@@ -104,7 +114,9 @@ protected:
 
 protected:
 	void* m_syscalls[MAX_PROCID];
-	void* PageFaultHandlerPtr[MAX_PROCID];
+	static void* PageFaultHandlerPtr[MAX_PROCID];
+
+	static PKEVENT m_patchGuardEvents[MAX_PROCID];
 };
 
 #endif //__SYSENETER_H__

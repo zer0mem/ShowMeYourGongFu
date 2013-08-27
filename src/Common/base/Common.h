@@ -59,6 +59,21 @@ __inline void KeBreak()
 #define MAX_PROCID (sizeof(ULONG) << 3) //*8 .. byte => 8bite
 #define	PROCID(cpu)		(KAFFINITY)((ULONG_PTR)KeQueryActiveProcessors() & (ULONG_PTR)(1 << (USHORT)cpu))
 
+#define ABSOLUTE(wait) (wait)
+
+#define RELATIVE(wait) (-(wait))
+
+#define NANOSECONDS(nanos) \
+	(((signed __int64)(nanos)) / 100L)
+
+#define MICROSECONDS(micros) \
+	(((signed __int64)(micros)) * NANOSECONDS(1000L))
+
+#define MILLISECONDS(milli) \
+	(((signed __int64)(milli)) * MICROSECONDS(1000L))
+
+#define SECONDS(seconds) \
+	(((signed __int64)(seconds)) * MILLISECONDS(1000L))
 
 //-----------------------------------------------------
 // ****************** WORK WITH REGS ******************

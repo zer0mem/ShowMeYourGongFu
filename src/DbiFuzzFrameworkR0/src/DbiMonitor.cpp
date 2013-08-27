@@ -19,14 +19,18 @@ EXTERN_C void rdmsr_hook();
 EXTERN_C void pagafault_hook();
 EXTERN_C void patchguard_hook();
 
-
 CDbiMonitor CDbiMonitor::m_instance;
+
+void* CDbiMonitor::PageFaultHandlerPtr[MAX_PROCID];
+PKEVENT CDbiMonitor::m_patchGuardEvents[MAX_PROCID];
 
 CDbiMonitor::CDbiMonitor() :
 	CSingleton(m_instance),
 	m_branchInfo(KeQueryActiveProcessorCount(NULL))
 {
 	RtlZeroMemory(m_syscalls, sizeof(m_syscalls));
+	RtlZeroMemory(PageFaultHandlerPtr, sizeof(PageFaultHandlerPtr));
+	RtlZeroMemory(m_patchGuardEvents, sizeof(m_patchGuardEvents));
 }
 
 CDbiMonitor::~CDbiMonitor()
@@ -43,6 +47,13 @@ CDbiMonitor::~CDbiMonitor()
 
 		core_id++;//follow with next core
 	}
+
+	for (size_t i = 0; i < _countof(m_patchGuardEvents); i++)
+		if (m_patchGuardEvents[i])
+		{
+			KeSetEvent(m_patchGuardEvents[i], MAXIMUM_PRIORITY, TRUE);
+			KeWaitForSingleObject(m_patchGuardEvents[i], Executive, KernelMode, FALSE, 0);
+		}
 }
 
 //----------------------------------------------------------------
@@ -107,32 +118,7 @@ void CDbiMonitor::PerCoreAction(
 		//set branching on basig blocks!!! + turn on last branch stack!
 		wrmsr(IA32_DEBUGCTL, (rdmsr(IA32_DEBUGCTL) | BTF | LBR));
 		//rdmsr / wrmsr dont affect guest MSR!!!!!!!
-/*
-//hook after PG disabled ....
-		GDT	idtr;
-		sidt(&idtr);
 
-		{
-			CMdl mdl(reinterpret_cast<void*>(idtr.base), IDT_SIZE);
-			GATE_DESCRIPTOR* idt = reinterpret_cast<GATE_DESCRIPTOR*>(mdl.WritePtr());
-			if (idt)
-			{
-				PageFaultHandlerPtr[coreId] = reinterpret_cast<void*>(
-					((((ULONG_PTR)idt[TRAP_page_fault].ExtendedOffset) << 32) | 
-					(((ULONG)idt[TRAP_page_fault].Selector) << 16) | 
-					idt[TRAP_page_fault].Offset));
-
-				{
-					//hook ...
-					CDisableInterrupts cli_sti;
-					idt[TRAP_page_fault].ExtendedOffset = (((ULONG_PTR)pagafault_hook) >> 32);
-					idt[TRAP_page_fault].Offset = (WORD)(ULONG_PTR)pagafault_hook;
-					idt[TRAP_page_fault].Selector = (WORD)(((DWORD)(ULONG_PTR)pagafault_hook) >> 16);
-				}
-
-			}
-		}
-*/
 		m_syscalls[coreId] = (void*)rdmsr(IA64_SYSENTER_EIP);
 		HookSyscallMSR(sysenter);
 		DbgPrint("Hooked. procid [%x] <=> syscall addr [%p]\n", coreId, m_syscalls[coreId]);
@@ -361,43 +347,13 @@ EXTERN_C void* RdmsrHook(
 	void* ret = (void*)reg[RCX];
 	DbgPrint("\nRdmsrHook %p [pethread : %p] -> dst = %p\n", ret, PsGetCurrentThread(), reg[RAX]);
 	reg[RCX] = IA64_SYSENTER_EIP;
+
+	KeBreak();
+	CDbiMonitor::InstallPageFaultHooks();
+	CDbiMonitor::DisablePatchGuard(0);
 	KeBreak();
 
-	WORD ebfe = 0xFEEB;
-	memcpy(ret, &ebfe, sizeof(ebfe));
-
-	BYTE core_id = 0;
-	CProcessorWalker cpu_w;
-	while (cpu_w.NextCore(&core_id, core_id))
-	{
-
-		KeSetSystemAffinityThread(PROCID(core_id));
-
-		GDT	idtr;
-		sidt(&idtr);
-
-		{
-			CMdl mdl(reinterpret_cast<void*>(idtr.base), IDT_SIZE);
-			GATE_DESCRIPTOR* idt = reinterpret_cast<GATE_DESCRIPTOR*>(mdl.WritePtr());
-			if (idt)
-			{
-				CDbiMonitor::GetInstance().SetPFHandler( core_id, reinterpret_cast<void*>(
-					((((ULONG_PTR)idt[TRAP_page_fault].ExtendedOffset) << 32) | 
-					(((ULONG)idt[TRAP_page_fault].Selector) << 16) | 
-					idt[TRAP_page_fault].Offset)) );
-
-				//hook ...
-				{
-					CDisableInterrupts cli_sti;
-					idt[TRAP_page_fault].ExtendedOffset = (((ULONG_PTR)pagafault_hook) >> 32);
-					idt[TRAP_page_fault].Offset = (WORD)(ULONG_PTR)pagafault_hook;
-					idt[TRAP_page_fault].Selector = (WORD)(((DWORD)(ULONG_PTR)pagafault_hook) >> 16);
-				}
-			}
-		}
-
-		core_id++;//follow with next core
-	}
+	//wait4rever : keinitilizeevent + kesetevent + kewaitforsingle object .. freeze this thread ;)
 
 	return ret;
 }
@@ -502,4 +458,49 @@ void CDbiMonitor::AntiPatchGuard(
 	vmread(VMX_VMCS64_GUEST_RIP, &reg[RCX]);//original 'ret'-addr
 	*/
 	vmwrite(VMX_VMCS64_GUEST_RIP, patchguard_hook);//trampoline to 	PatchGuardHook
+}
+
+void CDbiMonitor::InstallPageFaultHooks()
+{
+	if (!GetPFHandler(0))
+	{
+		BYTE core_id = 0;
+		CProcessorWalker cpu_w;
+		while (cpu_w.NextCore(&core_id, core_id))
+		{
+
+			KeSetSystemAffinityThread(PROCID(core_id));
+
+			GDT	idtr;
+			sidt(&idtr);
+
+			{
+				CMdl mdl(reinterpret_cast<void*>(idtr.base), IDT_SIZE);
+				GATE_DESCRIPTOR* idt = reinterpret_cast<GATE_DESCRIPTOR*>(mdl.WritePtr());
+				if (idt)
+				{
+					CDbiMonitor::GetInstance().SetPFHandler( core_id, reinterpret_cast<void*>(
+						((((ULONG_PTR)idt[TRAP_page_fault].ExtendedOffset) << 32) | 
+						(((ULONG)idt[TRAP_page_fault].Selector) << 16) | 
+						idt[TRAP_page_fault].Offset)) );
+
+					//hook ...
+					{
+						CDisableInterrupts cli_sti;
+						idt[TRAP_page_fault].ExtendedOffset = (((ULONG_PTR)pagafault_hook) >> 32);
+						idt[TRAP_page_fault].Offset = (WORD)(ULONG_PTR)pagafault_hook;
+						idt[TRAP_page_fault].Selector = (WORD)(((DWORD)(ULONG_PTR)pagafault_hook) >> 16);
+					}
+				}
+			}
+
+			core_id++;//follow with next core
+		}
+	}
+}
+
+void CDbiMonitor::DisablePatchGuard( __in BYTE coreId )
+{
+	KeInitializeEvent(m_patchGuardEvents[coreId], NotificationEvent, FALSE);
+	KeWaitForSingleObject(m_patchGuardEvents[coreId], Executive, KernelMode, FALSE, 0);
 }

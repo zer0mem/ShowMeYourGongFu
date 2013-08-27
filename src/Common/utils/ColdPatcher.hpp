@@ -27,7 +27,7 @@ public:
 		{
 //const_cast + WritePtrUnsafe ==>> IoReadAccess isntead of IoModifyAccess ==> hook problems ... but this is wrong concept, find another solution ...
 //probably it is already locked against modify ... 
-			CMdl patcher(const_cast<const void*>(addrToHook), size);
+			CMdl patcher(addrToHook, size);
 			void* cold_patch = patcher.WritePtrUnsafe();
 
 			if (cold_patch)
@@ -50,7 +50,7 @@ public:
 		{
 //const_cast + WritePtrUnsafe ==>> IoReadAccess isntead of IoModifyAccess ==> hook problems ... but this is wrong concept, find another solution ...
 //probably it is already locked against modify ... 
-			CMdl patcher(const_cast<const void*>(m_addrToHook), size);
+			CMdl patcher(m_addrToHook, size);
 			void* cold_patch = patcher.WritePtrUnsafe();
 
 			ASSERT(cold_patch);

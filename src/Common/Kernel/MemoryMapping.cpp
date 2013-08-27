@@ -96,7 +96,10 @@ void* CMdl::WritePtrUnsafe(
 	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached */
 	)
 {
-	//wrong concept ... yused in colpatcher ...
+	//wrong concept ... used in colpatcher ...
+	if (!m_locked)
+		m_locked = true;
+
 	return Map(cacheType, false);
 }
 

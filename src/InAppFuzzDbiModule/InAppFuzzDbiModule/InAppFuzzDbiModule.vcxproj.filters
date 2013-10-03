@@ -16,6 +16,12 @@
     <Filter Include="Common">
       <UniqueIdentifier>{76797ead-8dfa-416a-8a59-00639f77ff58}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Common\amd64">
+      <UniqueIdentifier>{2b7ba237-029d-4820-8c0a-f125c8ba04c6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\amd64">
+      <UniqueIdentifier>{a2de7b2a-d8a9-44aa-8cd5-72e7bd0a25f2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
@@ -36,6 +42,9 @@
     <ClInclude Include="..\..\Common\base\Shared.h">
       <Filter>Common</Filter>
     </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -47,5 +56,23 @@
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\Common\amd64\_instrinsics.asm">
+      <Filter>Common\amd64</Filter>
+    </None>
+    <None Include="..\..\Common\amd64\common.inc">
+      <Filter>Common\amd64</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="InAppFuzzDbiModule.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="amd64\ext_interface.asm">
+      <Filter>Source Files\amd64</Filter>
+    </MASM>
   </ItemGroup>
 </Project>

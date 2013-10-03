@@ -26,6 +26,8 @@ struct EVENT_THREAD_INFO
 	void* EventSemaphor;
 	void* ContextOnStack;
 	DBI_OUT_CONTEXT DbiOutContext;
+	
+	KEVENT SyncEvent;
 
 	EVENT_THREAD_INFO(
 		__in HANDLE processId
@@ -34,6 +36,8 @@ struct EVENT_THREAD_INFO
 			ContextOnStack(NULL)
 	{
 		RtlZeroMemory(&DbiOutContext, sizeof(DbiOutContext));
+
+		KeInitializeEvent(&SyncEvent, NotificationEvent, FALSE);
 	}
 
 	void LoadContext(
@@ -43,8 +47,6 @@ struct EVENT_THREAD_INFO
 		ProcessId = PsGetCurrentProcessId();
 		EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
 		ContextOnStack = reinterpret_cast<void*>(reg[DBI_PARAMS]);
-
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 	}
 
 
@@ -87,8 +89,7 @@ struct DBG_THREAD_EVENT :
 
 	__checkReturn
 	bool LoadContext(
-		__in ULONG_PTR reg[REG_COUNT],
-		__in bool is64
+		__in ULONG_PTR reg[REG_COUNT]
 	);
 
 	__checkReturn
@@ -100,7 +101,6 @@ struct DBG_THREAD_EVENT :
 
 private:
 	void* m_iret;
-	bool m_is64;
 };
 
 class CThreadEvent :
@@ -123,7 +123,6 @@ public:
 
 	__checkReturn
 	bool SmartTraceEvent(
-		__in CImage* img,
 		__in ULONG_PTR reg[REG_COUNT],
 		__in const TRACE_INFO& branchInfo
 	);
@@ -237,19 +236,5 @@ bool ReadParamBuffer(
 	}
 	return false;
 };
-
-template<class TYPE>
-__forceinline
-void SetIret(
-	__inout TYPE* iret,
-	__in const void* ret,
-	__in ULONG_PTR segSel,
-	__in ULONG_PTR flags
-	)
-{
-	iret[IReturn] = (TYPE)(ret);
-	iret[ICodeSegment] = (TYPE)(segSel);
-	iret[IFlags] = (TYPE)(flags);
-}
 
 #endif //__THREADEVENT_H__

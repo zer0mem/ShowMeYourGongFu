@@ -16,15 +16,26 @@
 #define DLLEXPORT extern "C" __declspec(dllexport) 
 
 extern "C" void fast_call_event(
-	__in ULONG_PTR fastCall
+	__in ULONG_PTR fastCall,
+	__in void* retHookAddr
 	);
 
 extern "C" void fast_call_monitor(
-	__in ULONG_PTR fastCall
+	__in ULONG_PTR fastCall,
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout void* info
 	);
 
-#define FastCallEvent fast_call_event
+extern "C" void fast_call_monitor_wait(
+	__in ULONG_PTR fastCall,
+	__in HANDLE procId,
+	__in HANDLE threadId,
+	__inout void* info
+	);
+
 #define FastCallMonitor fast_call_monitor
+#define FastCallMonitorWait fast_call_monitor_wait
 
 #else
 
@@ -194,7 +205,6 @@ _WaitForFuzzEvent:
 		retn
 	}
 }
-#endif // _WIN64
 
 DLLEXPORT
 void ExtTrapTrace()
@@ -217,6 +227,8 @@ void ExtMain()
 		call FastCallEvent
 	}
 }
+
+#endif // _WIN64
 
 EXTERN_C __declspec(dllexport) 
 void SmartTrace(
@@ -331,4 +343,4 @@ void DbiWatchMemoryAccess(
 	)
 {
 	FastCallMonitor(SYSCALL_WATCH_MEMORY, procId, threadId, dbiParams);
-} 
+}

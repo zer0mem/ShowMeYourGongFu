@@ -1,6 +1,4 @@
 ^..\Common\amd64\_instrinsics.asm
-D:\blog\DbiFuzzFramework\git\ShowMeYourGongFu\src\DbiFuzzFrameworkR0\Debug-amd64\_instrinsics.obj
-^src\amd64\ext_interface.asm
-D:\blog\DbiFuzzFramework\git\ShowMeYourGongFu\src\DbiFuzzFrameworkR0\Debug-amd64\ext_interface.obj
+D:\blog\DbiFuzzFramework\git\wtf\ShowMeYourGongFu\src\DbiFuzzFrameworkR0\Debug-amd64\_instrinsics.obj
 ^src\amd64\_syscall.asm
-D:\blog\DbiFuzzFramework\git\ShowMeYourGongFu\src\DbiFuzzFrameworkR0\Debug-amd64\_syscall.obj
+D:\blog\DbiFuzzFramework\git\wtf\ShowMeYourGongFu\src\DbiFuzzFrameworkR0\Debug-amd64\_syscall.obj

@@ -19,6 +19,8 @@ EXTERN_C void rdmsr_hook();
 EXTERN_C void pagafault_hook();
 EXTERN_C void patchguard_hook();
 
+EXTERN_C void StopFromHyperV();
+
 CDbiMonitor CDbiMonitor::m_instance;
 
 void* CDbiMonitor::PageFaultHandlerPtr[MAX_PROCID];
@@ -77,10 +79,13 @@ void CDbiMonitor::Install()
 #endif
 
 			{
+
+				InstallPageFaultHooks();
+
 				int CPUInfo[4] = {0};
 				int InfoType = 0;
 				__cpuid(CPUInfo, InfoType);
-				DbgPrint("\r\n~~~~~~~~~~~ CPUID (%i) : %s ~~~~~~~~~~~\r\n", i, CPUInfo);
+				DbgPrint("\r\n~~~~~~~~~~~ !CPUID (%i) : %s ~~~~~~~~~~~\r\n", i, CPUInfo);
 			}
 		}
 	}
@@ -121,6 +126,7 @@ void CDbiMonitor::PerCoreAction(
 
 		m_syscalls[coreId] = (void*)rdmsr(IA64_SYSENTER_EIP);
 		HookSyscallMSR(sysenter);
+
 		DbgPrint("Hooked. procid [%x] <=> syscall addr [%p]\n", coreId, m_syscalls[coreId]);
 	}
 }
@@ -189,7 +195,7 @@ CStack<TRACE_INFO>& CDbiMonitor::GetBranchStack()
 // ****************** MONITORING CALLBACKS ******************
 //-----------------------------------------------------------
 
-
+KEVENT kevent;
 //handle virtual protection / allocation methods
 EXTERN_C void* SysCallCallback( 
 	__inout ULONG_PTR reg [REG_COUNT]
@@ -207,6 +213,7 @@ EXTERN_C void* SysCallCallback(
 	{
 		if (FAST_CALL == reg[DBI_IOCALL] && (ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
 		{
+			KeBreak();
 			if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc))
 			{
 				if (fuzzed_proc->Syscall(reg))
@@ -315,11 +322,12 @@ void CDbiMonitor::TrapHandler(
 								branch_i->PrevEip.Value = reinterpret_cast<const void*>(src);
 
 								branch_i->Flags.Value = rflags;
-
+								
 								//disable trap flag and let handle it by PageFault Hndlr
 								vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 								//set eip to non-exec mem for quick recognization by PageFault handler
 								vmwrite(VMX_VMCS64_GUEST_RIP, branch_i->StackPtr.Value);
+
 								return;
 							}
 						}
@@ -490,6 +498,8 @@ void CDbiMonitor::InstallPageFaultHooks()
 						idt[TRAP_page_fault].Offset = (WORD)(ULONG_PTR)pagafault_hook;
 						idt[TRAP_page_fault].Selector = (WORD)(((DWORD)(ULONG_PTR)pagafault_hook) >> 16);
 					}
+
+					DbgPrint("\r\nIDT HOOKED %x\r\n", core_id);
 				}
 			}
 

@@ -81,7 +81,9 @@ bool CThreadEvent::FlipSemaphore(
 			CMdl event_semaphor(eventThreadInfo.EventSemaphor, sizeof(BYTE));
 			volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.WritePtr());
 			if (semaphor)
+			{
 				return (0 == InterlockedExchange8(semaphor, 1));
+			}
 		}
 	}
 	return false;
@@ -106,11 +108,19 @@ bool CThreadEvent::HookEvent(
 	m_dbgThreadInfo.DbiOutContext.TraceInfo.StackPtr.Value = HOOK_ORIG_RSP(reg);
 	m_dbgThreadInfo.DbiOutContext.TraceInfo.Flags.Value = PPAGE_FAULT_IRET(reg)->Flags;//not correct -> correct map DBI_PARAMS and get pushf
 
-	if (m_dbgThreadInfo.LoadContext(reg, img->Is64()))
+	if (m_dbgThreadInfo.LoadContext(reg))
 	{
 		//(void) because of init is called after main ep hook ..
 		(void)m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
 		(void)FlipSemaphore(m_dbiThreadInfo);
+
+/*
+//when tracer r0
+		KeBreak();
+		KeResetEvent(&m_dbgThreadInfo.SyncEvent);
+		KeSetEvent(&m_dbiThreadInfo.SyncEvent, MAXIMUM_PRIORITY, TRUE);
+		KeWaitForSingleObject(&m_dbgThreadInfo.SyncEvent, Executive, KernelMode, FALSE, 0);
+*/
 		return true;
 	}
 
@@ -119,18 +129,25 @@ bool CThreadEvent::HookEvent(
 
 __checkReturn
 bool CThreadEvent::SmartTraceEvent( 
-	__in CImage* img, 
 	__in ULONG_PTR reg[REG_COUNT], 
 	__in const TRACE_INFO& branchInfo
 	)
 {
 	m_dbgThreadInfo.DbiOutContext.TraceInfo = branchInfo;
 
-	if (m_dbgThreadInfo.LoadContext(reg, img->Is64()))
+	if (m_dbgThreadInfo.LoadContext(reg))
 		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
 			//return FlipSemaphore(m_dbiThreadInfo);//codecoverme.exe ohack
 		{
 			FlipSemaphore(m_dbiThreadInfo);
+			
+/*
+//when tracer r0
+			KeBreak();
+			KeResetEvent(&m_dbgThreadInfo.SyncEvent);
+			KeSetEvent(&m_dbiThreadInfo.SyncEvent, MAXIMUM_PRIORITY, TRUE);
+			KeWaitForSingleObject(&m_dbgThreadInfo.SyncEvent, Executive, KernelMode, FALSE, 0);
+*/
 			return true;
 		}
 
@@ -148,7 +165,6 @@ bool CThreadEvent::Init(
 {
 	reinterpret_cast<EVENT_THREAD_INFO&>(m_dbiThreadInfo).LoadContext(reg);
 	m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
-	PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 
 	return m_initialized;
 }
@@ -161,7 +177,18 @@ bool CThreadEvent::SmartTrace(
 {
 	if (m_dbiThreadInfo.LoadContext(reg))
 		if (m_dbgThreadInfo.UpdateContext(reg, m_dbiThreadInfo))
-			return FlipSemaphore(m_dbgThreadInfo);
+		{
+			FlipSemaphore(m_dbgThreadInfo);
+			
+/*
+//when tracer r0
+			KeBreak();
+			KeResetEvent(&m_dbiThreadInfo.SyncEvent);
+			KeSetEvent(&m_dbgThreadInfo.SyncEvent, MAXIMUM_PRIORITY, TRUE);
+			KeWaitForSingleObject(&m_dbiThreadInfo.SyncEvent, Executive, KernelMode, FALSE, 0);
+*/
+			return true;
+		}
 
 	return false;
 }
@@ -184,7 +211,6 @@ bool CThreadEvent::EnumMemory(
 			mem->Flags.Value = vad_mem.GetFlags().UFlags;
 		}
 
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 		return true;
 	}
 
@@ -199,8 +225,6 @@ bool CThreadEvent::WatchMemoryAccess(
 	PARAM_MEM2WATCH params;
 	if (ReadParamBuffer<PARAM_MEM2WATCH>(reg, &params))
 	{
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-
 		//for now support just aligned watching .. in other case more processing needed ...
 		BYTE* mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(params.Memory.Value));
 		size_t size = ALIGN((params.Size.Value + ((ULONG_PTR)params.Memory.Value - (ULONG_PTR)mem2watch) + PAGE_SIZE), PAGE_SIZE);
@@ -284,11 +308,9 @@ bool DBI_THREAD_EVENT::UpdateContext(
 
 __checkReturn
 bool DBG_THREAD_EVENT::LoadContext( 
-	__in ULONG_PTR reg[REG_COUNT],
-	__in bool is64
+	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	m_is64 = is64;
 	m_iret = reinterpret_cast<void*>(reg[DBI_IRET]);
 	EVENT_THREAD_INFO::LoadContext(reg);
 
@@ -296,14 +318,7 @@ bool DBG_THREAD_EVENT::LoadContext(
 	const void* reg_context = reg_auto_context.ReadPtr();
 	if (reg_context)
 	{
-		//use just for read!
-		CRegXType regs(m_is64, const_cast<void*>(reg_context));
-
-		for (size_t i = 0; i < REG_COUNT; i++)
-			DbiOutContext.GeneralPurposeContext[i] = regs.GetReg(i);
-
-		DbiOutContext.GeneralPurposeContext[DBI_FLAGS] = regs.GetFLAGS();
-
+		memcpy(DbiOutContext.GeneralPurposeContext, reg_context, sizeof(DbiOutContext.GeneralPurposeContext));
 		return true;
 	}
 	return false;
@@ -323,28 +338,17 @@ bool DBG_THREAD_EVENT::UpdateContext(
 		void* reg_context = reg_auto_context.WritePtr();
 		if (reg_context)
 		{
-			CRegXType regs(m_is64, reg_context);
-
-			for (size_t i = 0; i < REG_COUNT; i++)
-				regs.SetReg(i, cthreadInfo.DbiOutContext.GeneralPurposeContext[i]);
-
-			regs.SetFLAGS(cthreadInfo.DbiOutContext.GeneralPurposeContext[DBI_FLAGS]);
-
-
+			memcpy(reg_context, cthreadInfo.DbiOutContext.GeneralPurposeContext, sizeof(DbiOutContext.GeneralPurposeContext));
+			
 			CMdl r_auto_context(reinterpret_cast<void*>(m_iret), IRetCount * sizeof(ULONG_PTR));
-			void* iret_ctx = r_auto_context.WritePtr();
-			if (iret_ctx)
+			ULONG_PTR* iret = reinterpret_cast<ULONG_PTR*>(r_auto_context.WritePtr());
+			if (iret)
 			{
-				if (m_is64)
-					SetIret<ULONG_PTR>(reinterpret_cast<ULONG_PTR*>(iret_ctx), 
-						cthreadInfo.DbiOutContext.TraceInfo.Eip.Value, 
-						PPAGE_FAULT_IRET(reg)->CodeSegment, 
-						cthreadInfo.DbiOutContext.TraceInfo.Flags.Value);
-				else
-					SetIret<ULONG>(reinterpret_cast<ULONG*>(iret_ctx), 
-						cthreadInfo.DbiOutContext.TraceInfo.Eip.Value, 
-						PPAGE_FAULT_IRET(reg)->CodeSegment, 
-						cthreadInfo.DbiOutContext.TraceInfo.Flags.Value);
+				iret[IReturn] = reinterpret_cast<ULONG_PTR>(cthreadInfo.DbiOutContext.TraceInfo.Eip.Value);
+				iret[ICodeSegment] = SYSCAL_CS_SEGEMENT;
+				iret[IFlags] = (cthreadInfo.DbiOutContext.TraceInfo.Flags.Value | TRAP);
+				iret[IRsp] = reinterpret_cast<ULONG_PTR>(cthreadInfo.DbiOutContext.TraceInfo.StackPtr.Value);
+				iret[IStackSegment] = SYSCAL_SS_SEGEMENT;
 			}
 
 			return true;

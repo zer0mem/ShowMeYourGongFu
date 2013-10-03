@@ -334,13 +334,13 @@
     <MASM Include="..\Common\amd64\_instrinsics.asm">
       <FileType>Document</FileType>
     </MASM>
-    <MASM Include="src\amd64\ext_interface.asm" />
     <MASM Include="src\amd64\_syscall.asm" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\Common\amd64\common.inc">
       <FileType>Document</FileType>
     </None>
+    <None Include="..\Common\FastCall\FastCall.inc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Cronos\Cronos.vcxproj">

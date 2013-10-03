@@ -170,6 +170,8 @@ private:
 protected:
 	bool m_installed;
 
+	KEVENT teste;
+
 	const void* m_extRoutines[ExtCount];
 };
 

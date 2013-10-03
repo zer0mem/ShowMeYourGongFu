@@ -92,4 +92,13 @@ syscall_instr_epilogue proc
 	sysretq
 syscall_instr_epilogue endp
 
+StopFromHyperV proc
+	xor eax, eax
+	nop
+	int 3
+	int 3
+	int 3
+	ret
+StopFromHyperV endp
+
 end

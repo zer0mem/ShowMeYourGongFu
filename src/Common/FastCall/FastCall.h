@@ -33,7 +33,8 @@ enum
 //per reg INFO
 	DBI_ACTION = RAX,
 
-	DBI_IOCALL = RCX, //x86 compatibility ...
+	//DBI_IOCALL = RCX, //x86 compatibility ...
+	DBI_IOCALL = R8, //x64 compatibility ...
 
 	DBI_R3TELEPORT = RDI,
 
@@ -53,6 +54,9 @@ enum
 
 #define SIZEOF_DBI_FASTCALL 2 //mov eax, [ecx]
 
+#define SYSCAL_CS_SEGEMENT 0x33 //by default intel -> rdmsr 0xC0000082 check few instructions {swapgs, swap r3 with r0 stack pointer, push [ss, r3:rsp, rflags, cs, r3:rip] }
+#define SYSCAL_SS_SEGEMENT 0x2B
+
 enum EnumSYSENTER
 {
 	SReturn = RCX,
@@ -64,6 +68,8 @@ enum EnumIRET
 	IReturn = 0,
 	ICodeSegment,
 	IFlags,
+	IRsp,
+	IStackSegment,
 	IRetCount
 };
 
@@ -108,7 +114,7 @@ struct MEMORY_ACCESS
 
 struct DBI_OUT_CONTEXT
 {
-	ULONG_PTR GeneralPurposeContext[REG_COUNT + 1];
+	ULONG_PTR GeneralPurposeContext[DBI_FLAGS + 1];
 	TRACE_INFO TraceInfo;
 	MEMORY_ACCESS MemoryInfo;
 };

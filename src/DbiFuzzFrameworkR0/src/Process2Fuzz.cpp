@@ -25,6 +25,7 @@ CProcess2Fuzz::CProcess2Fuzz(
 	) : CProcessContext(process, processId, createInfo),
 		m_installed(false)
 {
+	KeInitializeEvent(&teste, NotificationEvent, FALSE);
 	RtlZeroMemory(m_extRoutines, sizeof(m_extRoutines));
 }
 
@@ -121,6 +122,7 @@ bool CProcess2Fuzz::PageFault(
 //HACKY PART OF PAGEFAULT >>> should be moved to more appropriate place ...
 	if (FAST_CALL == (ULONG_PTR)iret->Return)
 	{
+		KeBreak();
 		return false;
 	}
 
@@ -146,6 +148,7 @@ bool CProcess2Fuzz::PageFault(
 					if (iret->Return == branchInfo->StackPtr.Value)
 					{
 						//handle branch tracing - callback from HV
+						KeBreak();
 						iret->Return = m_extRoutines[ExtTrapTrace];
 						return true;
 					}
@@ -155,10 +158,10 @@ bool CProcess2Fuzz::PageFault(
 		}
 	}
 //HACKY PART OF PAGEFAULT >>> should be moved to more appropriate place ...
-
 //X86 specific ...
 	if (FAST_CALL == reg[DBI_IOCALL] && FAST_CALL == (ULONG_PTR)faultAddr)
 	{
+		KeBreak();
 		//additional check if it is communication from r3 dbi-monitor
 		if ((ULONG_PTR)iret->Return + SIZEOF_DBI_FASTCALL == reg[DBI_R3TELEPORT])
 			return Syscall(reg, branchInfo);
@@ -226,13 +229,12 @@ bool CProcess2Fuzz::DbiTraceEvent(
 	__in TRACE_INFO* branchInfo
 	)
 {
-	PFIRET* iret = PPAGE_FAULT_IRET(reg);
-
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 	{
 		CImage* img;
-		if (GetImage(iret->Return, &img))
+		//reg[RCX] == return from syscall
+		if (GetImage(reinterpret_cast<void*>(reg[SReturn]), &img))
 		{
 			//handle x86 -> x64, x64 -> x86 calls
 			if (branchInfo->PrevEip.Value != MM_LOWEST_USER_ADDRESS)
@@ -277,7 +279,7 @@ bool CProcess2Fuzz::DbiTraceEvent(
 				}
 			}
 
-			return fuzz_thread->SmartTraceEvent(img, reg, *branchInfo);
+			return fuzz_thread->SmartTraceEvent(reg, *branchInfo);
 		}
 
 	}
@@ -306,8 +308,6 @@ bool CProcess2Fuzz::DbiEnumThreads(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	PFIRET* iret = PPAGE_FAULT_IRET(reg);
-
 	CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(CID_ENUM));
 	CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.WritePtrUser());
 	if (cid)
@@ -324,7 +324,6 @@ bool CProcess2Fuzz::DbiEnumThreads(
 			cid->ThreadId.Value = thread->Value->ThreadId();
 		}
 
-		iret->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
 		return true;
 	}
 	return false;
@@ -401,8 +400,6 @@ bool CProcess2Fuzz::DbiEnumModules(
 	MODULE_ENUM* module = reinterpret_cast<MODULE_ENUM*>(auto_module.WritePtrUser());
 	if (module)
 	{
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-
 		IMAGE* img = NULL;
 		if (!module->ImageBase.Value)
 			(void)m_loadedImgs.Find(CRange<void>(module->ImageBase.Value), &img);
@@ -433,8 +430,6 @@ bool CProcess2Fuzz::DbiGetProcAddress(
 	PARAM_API* api_param = reinterpret_cast<PARAM_API*>(auto_api_param.WritePtr());
 	if (api_param)
 	{
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-
 		CImage* img;
 		if (GetImage(api_param->ModuleBase.Value, &img))
 		{
@@ -458,8 +453,6 @@ bool CProcess2Fuzz::DbiDumpMemory(
 	PARAM_MEMCOPY params;
 	if (ReadParamBuffer<PARAM_MEMCOPY>(reg, &params))
 	{
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-
 		CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
 		void* dst = mdl_dbg.WritePtr();
 		if (dst)
@@ -489,8 +482,6 @@ bool CProcess2Fuzz::DbiPatchMemory(
 	PARAM_MEMCOPY params;
 	if (ReadParamBuffer<PARAM_MEMCOPY>(reg, &params))
 	{
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-
 		CMdl mdl_mntr(params.Src.Value, params.Size.Value);
 		const void* src = mdl_mntr.ReadPtr();
 		if (src)
@@ -520,8 +511,6 @@ bool CProcess2Fuzz::DbiSetHook(
 	PARAM_HOOK params;
 	if (ReadParamBuffer<PARAM_HOOK>(reg, &params))
 	{
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-
 		CImage* img;
 		if (GetImage(params.HookAddr.Value, &img))
 		{
@@ -555,6 +544,15 @@ bool CProcess2Fuzz::Syscall(
 	bool status = false;
 	switch ((ULONG)reg[RAX])//DBI_ACTION
 	{
+	case 0x666:
+		KeBreak();
+
+		if (m_processId == PsGetCurrentProcessId())
+			status = DbiTraceEvent(reg, branchInfo);
+		else
+			status = DbiRemoteTrace(reg);
+
+		break;
 	case SYSCALL_HOOK:
 		if (m_processId == PsGetCurrentProcessId())
 			status = DbiHook(reg);

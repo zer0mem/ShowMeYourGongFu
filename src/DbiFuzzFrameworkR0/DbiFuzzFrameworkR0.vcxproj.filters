@@ -200,13 +200,13 @@
     <MASM Include="src\amd64\_syscall.asm">
       <Filter>src\amd64</Filter>
     </MASM>
-    <MASM Include="src\amd64\ext_interface.asm">
-      <Filter>src\amd64</Filter>
-    </MASM>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\Common\amd64\common.inc">
       <Filter>Common\amd64</Filter>
+    </None>
+    <None Include="..\Common\FastCall\FastCall.inc">
+      <Filter>Common\FastCall</Filter>
     </None>
   </ItemGroup>
 </Project>

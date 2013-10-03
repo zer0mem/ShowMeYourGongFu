@@ -83,9 +83,8 @@ void* CMdl::WritePtr(
 	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached */
 	)
 {
-	return Map(cacheType, false);
 //hook problems ... but this is wrong concept, find another solution ...
-	if (m_lockOperation == IoModifyAccess)
+	if (m_lockOperation != IoReadAccess)
 		return Map(cacheType, false);
 	return NULL;
 }
@@ -97,10 +96,16 @@ void* CMdl::WritePtrUnsafe(
 	)
 {
 	//wrong concept ... used in colpatcher ...
-	if (!m_locked)
-		m_locked = true;
+	void* mapped = Map(cacheType, false);
+	if (!mapped)
+	{
+		LOCK_OPERATION lock_op = m_lockOperation;
+		m_lockOperation = IoReadAccess;
+		mapped = Map(cacheType, false);
+		m_lockOperation = lock_op;
+	}
 
-	return Map(cacheType, false);
+	return mapped;
 }
 
 _IRQL_requires_max_(APC_LEVEL)

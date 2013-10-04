@@ -121,10 +121,10 @@ struct FARCALLHOOK
 	}
 };
 
-class CRelCallHook
+class CFarCallHook
 {
 public:
-	CRelCallHook(
+	CFarCallHook(
 		__in void* addrToHook,
 		__in const void* addrOfHook
 		) : m_farCallHook(addrOfHook),

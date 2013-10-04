@@ -22,7 +22,7 @@ const STRING CConstants::m_inAppExtRoutines[] =
 {
 	RTL_CONSTANT_STRING("ExtTrapTrace"),
 	RTL_CONSTANT_STRING("ExtInfo"),
-	RTL_CONSTANT_STRING("ExtMain"),
+	RTL_CONSTANT_STRING("ExtHook"),
 };
 
 const UNICODE_STRING CConstants::m_systemModules[] =

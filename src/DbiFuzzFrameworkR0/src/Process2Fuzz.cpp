@@ -25,7 +25,6 @@ CProcess2Fuzz::CProcess2Fuzz(
 	) : CProcessContext(process, processId, createInfo),
 		m_installed(false)
 {
-	KeInitializeEvent(&teste, NotificationEvent, FALSE);
 	RtlZeroMemory(m_extRoutines, sizeof(m_extRoutines));
 }
 
@@ -124,25 +123,25 @@ bool CProcess2Fuzz::PageFault(
 		CThreadEvent* fuzz_thread;
 		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
-			/*
-			// { ************************** INSTAL EP HOOK ************************** 
+			// { ************************** INSTAL EP HOOK, freeze app at the begining - w8 for r3tracer ************************** 
 			if (!m_installed && m_mainImg && m_extRoutines[ExtHook])
 			{
-				void* ep_hook = reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
-				m_installed = m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtHook]);
+				void* hook = m_mainImg->Image().IsInRange(iret->Return) ? const_cast<void*>(iret->Return) : reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
+				m_installed = m_mainImg->SetUpNewRelHook(hook, m_extRoutines[ExtHook]);
+
+				//this test + ret true; is probably not necessary ...
+				if (m_installed && m_mainImg->Image().IsInRange(iret->Return))
+					return true;
 			}
 			// } ************************** INSTAL EP HOOK ************************** 
-			*/
 
 			// { ************************** HANDLE HV TRAP EXIT ************************** 
 			if (iret->Return == faultAddr)
 			{
-				//potentianaly need to be disabled ... following 'if'
 				if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
 				{
 					if (iret->Return == branchInfo->StackPtr.Value)
 					{
-						KeBreak();
 						//handle branch tracing - callback from HV
 						iret->Return = m_extRoutines[ExtTrapTrace];
 
@@ -197,6 +196,7 @@ bool CProcess2Fuzz::DbiHook(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
+	KeBreak();
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 	{
@@ -223,6 +223,7 @@ bool CProcess2Fuzz::DbiTraceEvent(
 			CImage* dst_img;
 			if (GetImage(branchInfo->Eip.Value, &dst_img))
 			{
+				//is system logic should be moved to user mode r3 tracer ...
 				if (dst_img->IsSystem())
 				{
 					CImage* target_img;
@@ -459,7 +460,7 @@ bool CProcess2Fuzz::DbiPatchMemory(
 			{
 				KeBreak();
 				CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
-				void* dst = mdl_dbg.WritePtrUnsafe();
+				void* dst = mdl_dbg.WritePtr();
 				if (dst)
 				{
 					memcpy(dst, src, params.Size.Value);

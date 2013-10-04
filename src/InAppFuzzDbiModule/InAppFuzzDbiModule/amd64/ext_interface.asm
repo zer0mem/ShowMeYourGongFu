@@ -139,12 +139,12 @@ ExtTrapTrace proc
 	call fast_call_event
 ExtTrapTrace endp
 
-ExtMain proc
+ExtHook proc
 	;push retHookAddr <- current ret
 	push [rsp]
 	push [rsp]
 	push SYSCALL_HOOK
 	call fast_call_event
-ExtMain endp
+ExtHook endp
 
 end

@@ -26,8 +26,8 @@ struct EVENT_THREAD_INFO
 	void* EventSemaphor;
 	void* ContextOnStack;
 	DBI_OUT_CONTEXT DbiOutContext;
-	
-	KEVENT SyncEvent;
+
+	//KEVENT SyncEvent;
 
 	EVENT_THREAD_INFO(
 		__in HANDLE processId
@@ -37,7 +37,7 @@ struct EVENT_THREAD_INFO
 	{
 		RtlZeroMemory(&DbiOutContext, sizeof(DbiOutContext));
 
-		KeInitializeEvent(&SyncEvent, NotificationEvent, FALSE);
+		//KeInitializeEvent(&SyncEvent, NotificationEvent, FALSE);
 	}
 
 	void LoadContext(

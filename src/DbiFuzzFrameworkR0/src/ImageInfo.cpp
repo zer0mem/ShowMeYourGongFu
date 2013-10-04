@@ -65,7 +65,7 @@ bool CImage::SetUpNewRelHook(
 	{
 		if (!m_hooks.Find(RELLCALLHOOK_ID(addrToHook)))
 		{
-			CRelCallHook* hook = new CRelCallHook(addrToHook, addrOfHook);
+			CFarCallHook* hook = new CFarCallHook(addrToHook, addrOfHook);
 			if (hook && hook->IsHooked())
 			{
 				RELLCALLHOOK_ID hook_id(addrToHook, hook);

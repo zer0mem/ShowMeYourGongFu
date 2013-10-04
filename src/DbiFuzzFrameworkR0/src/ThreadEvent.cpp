@@ -99,14 +99,15 @@ bool CThreadEvent::HookEvent(
 	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	void* ret = reinterpret_cast<void*>(reg[DBI_RETURN] - SIZE_REL_CALL);	
+	void* ret = reinterpret_cast<void*>(reg[DBI_RETURN] - FARCALL_INST_SIZE);
 	if (img->IsHooked(ret))
 		img->UninstallHook(ret);
 
 	m_dbgThreadInfo.DbiOutContext.TraceInfo.PrevEip.Value = ret;
 	m_dbgThreadInfo.DbiOutContext.TraceInfo.Eip.Value = ret;
-	m_dbgThreadInfo.DbiOutContext.TraceInfo.StackPtr.Value = HOOK_ORIG_RSP(reg);
-	m_dbgThreadInfo.DbiOutContext.TraceInfo.Flags.Value = PPAGE_FAULT_IRET(reg)->Flags;//not correct -> correct map DBI_PARAMS and get pushf
+	KeBreak();
+	m_dbgThreadInfo.DbiOutContext.TraceInfo.StackPtr.Value = reinterpret_cast<ULONG_PTR*>(reg[RSP]) + (DBI_FLAGS + 1)/*reg context*/ + 1 /*semaphore*/ + 5 /*(4-1) parameters + 2 calls*/ + 2/*syscall smth?*/;
+	m_dbgThreadInfo.DbiOutContext.TraceInfo.Flags.Value = reg[DBI_FLAGS]; //not accurate, flags was meanwhile modified by shellcode from inappfuzzdbi.dll module .. 
 
 	if (m_dbgThreadInfo.LoadContext(reg))
 	{
@@ -346,7 +347,7 @@ bool DBG_THREAD_EVENT::UpdateContext(
 			{
 				iret[IReturn] = reinterpret_cast<ULONG_PTR>(cthreadInfo.DbiOutContext.TraceInfo.Eip.Value);
 				iret[ICodeSegment] = SYSCAL_CS_SEGEMENT;
-				iret[IFlags] = (cthreadInfo.DbiOutContext.TraceInfo.Flags.Value | TRAP);
+				iret[IFlags] = (cthreadInfo.DbiOutContext.TraceInfo.Flags.Value);
 				iret[IRsp] = reinterpret_cast<ULONG_PTR>(cthreadInfo.DbiOutContext.TraceInfo.StackPtr.Value);
 				iret[IStackSegment] = SYSCAL_SS_SEGEMENT;
 			}

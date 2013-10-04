@@ -118,19 +118,13 @@ bool CProcess2Fuzz::PageFault(
 {
 	ResolveThreads();
 	PFIRET* iret = PPAGE_FAULT_IRET(reg);
-
-//HACKY PART OF PAGEFAULT >>> should be moved to more appropriate place ...
-	if (FAST_CALL == (ULONG_PTR)iret->Return)
-	{
-		KeBreak();
-		return false;
-	}
-
+	
 	if (PsGetCurrentProcessId() == m_processId)
 	{
 		CThreadEvent* fuzz_thread;
 		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
+			/*
 			// { ************************** INSTAL EP HOOK ************************** 
 			if (!m_installed && m_mainImg && m_extRoutines[ExtHook])
 			{
@@ -138,18 +132,20 @@ bool CProcess2Fuzz::PageFault(
 				m_installed = m_mainImg->SetUpNewRelHook(ep_hook, m_extRoutines[ExtHook]);
 			}
 			// } ************************** INSTAL EP HOOK ************************** 
+			*/
 
 			// { ************************** HANDLE HV TRAP EXIT ************************** 
 			if (iret->Return == faultAddr)
 			{
-				//disabled due codecoverme.exe
-				//if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))//codecoverme.exe ohack
+				//potentianaly need to be disabled ... following 'if'
+				if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
 				{
 					if (iret->Return == branchInfo->StackPtr.Value)
 					{
-						//handle branch tracing - callback from HV
 						KeBreak();
+						//handle branch tracing - callback from HV
 						iret->Return = m_extRoutines[ExtTrapTrace];
+
 						return true;
 					}
 				}
@@ -157,17 +153,6 @@ bool CProcess2Fuzz::PageFault(
 			// } ************************** HANDLE HV TRAP EXIT ************************** 
 		}
 	}
-//HACKY PART OF PAGEFAULT >>> should be moved to more appropriate place ...
-//X86 specific ...
-	if (FAST_CALL == reg[DBI_IOCALL] && FAST_CALL == (ULONG_PTR)faultAddr)
-	{
-		KeBreak();
-		//additional check if it is communication from r3 dbi-monitor
-		if ((ULONG_PTR)iret->Return + SIZEOF_DBI_FASTCALL == reg[DBI_R3TELEPORT])
-			return Syscall(reg, branchInfo);
-	}
-//X86 specific ...
-
 
 // { ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 	if (PsGetCurrentProcessId() == m_processId)
@@ -232,56 +217,38 @@ bool CProcess2Fuzz::DbiTraceEvent(
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 	{
-		CImage* img;
-		//reg[RCX] == return from syscall
-		if (GetImage(reinterpret_cast<void*>(reg[SReturn]), &img))
+		//handle BTF - steping trough bblocks
+		if (branchInfo->PrevEip.Value != MM_LOWEST_USER_ADDRESS)
 		{
-			//handle x86 -> x64, x64 -> x86 calls
-			if (branchInfo->PrevEip.Value != MM_LOWEST_USER_ADDRESS)
+			CImage* dst_img;
+			if (GetImage(branchInfo->Eip.Value, &dst_img))
 			{
-				CImage* dst_img;
-				if (GetImage(branchInfo->Eip.Value, &dst_img))
+				if (dst_img->IsSystem())
 				{
-					//CImage* src_img;
-					//if (GetImage(branchInfo->PrevEip.Value, &src_img))
+					CImage* target_img;
+					if (GetImage(reinterpret_cast<void*>(reg[DBI_RETURN]), &target_img))
 					{
-						if (m_mainImg->Is64() != dst_img->Is64() || dst_img->IsSystem())
-						{
-							CImage* target_img;
-							if (GetImage(reinterpret_cast<void*>(reg[DBI_RETURN]), &target_img))
-							{
-								target_img->SetUpNewRelHook(reinterpret_cast<void*>(reg[DBI_RETURN]), m_extRoutines[ExtHook]);
-								branchInfo->Flags.Value &= (~TRAP);
-								//DbgPrint("-----------> %p %p %p", branchInfo->Eip.Value, branchInfo->PrevEip.Value, reg[DBI_RETURN]);
-
-							}
-						}
-
-						/*
-						DbgPrint("\n EventCallback <SYSCALL_TRACE_FLAG : %p)> : >> %p -%x [%ws (%s)] %p -%x [%ws (%s)] | dbg -> %ws //%p\n", 
-							branchInfo->Flags,
-							branchInfo->PrevEip, (ULONG_PTR)branchInfo->PrevEip.Value - (ULONG_PTR)src_img->Image().Begin(), src_img->ImageName().Buffer, src_img->Is64() ? "x64" : "x86",
-							branchInfo->Eip, (ULONG_PTR)branchInfo->Eip.Value - (ULONG_PTR)dst_img->Image().Begin(), dst_img->ImageName().Buffer, dst_img->Is64() ? "x64" : "x86",
-							img->ImageName().Buffer,  
-							reg[DBI_RETURN]);
-						*/
+						target_img->SetUpNewRelHook(reinterpret_cast<void*>(reg[DBI_RETURN]), m_extRoutines[ExtHook]);
+						branchInfo->Flags.Value &= (~TRAP);
+						DbgPrint("-----------> %p %p %p", branchInfo->Eip.Value, branchInfo->PrevEip.Value, reg[DBI_RETURN]);
 					}
 				}
 			}
-			else
+		}
+		//else handle MEMORY ACCESS violation, which cause from page fault single step TRAP
+		else
+		{
+			CMemoryRange* mem;
+			if (fuzz_thread->GetMemory2Watch(fuzz_thread->GetMemoryAccess().Memory.Value, sizeof(ULONG_PTR), &mem) &&
+				!mem->MatchFlags(DIRTY_FLAG))
 			{
-				CMemoryRange* mem;
-				if (fuzz_thread->GetMemory2Watch(fuzz_thread->GetMemoryAccess().Memory.Value, sizeof(ULONG_PTR), &mem) &&
-					!mem->MatchFlags(DIRTY_FLAG))
-				{
-					mem->SetFlags(mem->GetFlags() | DIRTY_FLAG);
-					CMMU::SetInvalid(fuzz_thread->GetMemoryAccess().Memory.Value, sizeof(ULONG_PTR));
-				}
+				mem->SetFlags(mem->GetFlags() | DIRTY_FLAG);
+				CMMU::SetInvalid(fuzz_thread->GetMemoryAccess().Memory.Value, sizeof(ULONG_PTR));
 			}
-
-			return fuzz_thread->SmartTraceEvent(reg, *branchInfo);
+			//else single step is invoked, necessary to add handling ...
 		}
 
+		return fuzz_thread->SmartTraceEvent(reg, *branchInfo);
 	}
 	
 	return false;
@@ -490,8 +457,9 @@ bool CProcess2Fuzz::DbiPatchMemory(
 			CAutoEProcessAttach attach(eprocess);
 			if (eprocess.IsAttached())
 			{
+				KeBreak();
 				CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
-				void* dst = mdl_dbg.WritePtr();
+				void* dst = mdl_dbg.WritePtrUnsafe();
 				if (dst)
 				{
 					memcpy(dst, src, params.Size.Value);
@@ -537,20 +505,13 @@ bool CProcess2Fuzz::Syscall(
 {
 	ULONG_PTR ring0rsp = reg[RSP];
 
-	//if x86 then this called from PageFault handler, and RSP is original ...
-	if (m_mainImg->Is64())
-		reg[RSP] = (ULONG_PTR)(get_ring3_rsp() - 2);
+	reg[RSP] = (ULONG_PTR)(get_ring3_rsp() - 2);
 
 	bool status = false;
 	switch ((ULONG)reg[RAX])//DBI_ACTION
 	{
 	case 0x666:
 		KeBreak();
-
-		if (m_processId == PsGetCurrentProcessId())
-			status = DbiTraceEvent(reg, branchInfo);
-		else
-			status = DbiRemoteTrace(reg);
 
 		break;
 	case SYSCALL_HOOK:

@@ -213,7 +213,6 @@ EXTERN_C void* SysCallCallback(
 	{
 		if (FAST_CALL == reg[DBI_IOCALL] && (ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
 		{
-			KeBreak();
 			if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc))
 			{
 				if (fuzzed_proc->Syscall(reg))

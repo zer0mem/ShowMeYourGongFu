@@ -87,14 +87,38 @@ struct RELCALLHOOK
 	BYTE Buffer[SIZE_REL_CALL];
 
 	RELCALLHOOK(
-		__in ULONG delta
+		__in void* addrToHook,
+		__in const void* addrOfHook
 		)
 	{
+		ULONG delta = (ULONG)(ULONG_PTR)((ULONG_PTR)addrOfHook - (ULONG_PTR)addrToHook - SIZE_REL_CALL);
 		Buffer[0] = 0xE8;
 		*reinterpret_cast<ULONG*>(Buffer + 1) = delta;		
 	}
 private:
 	RELCALLHOOK();
+};
+
+/*
+	call qword ptr[@next_instr]
+@next_instr:
+	dq 01234567812345678h
+*/
+#define FARCALL_INST_SIZE (sizeof(WORD) + sizeof(DWORD))
+#define FARCALLHOOK_SIZE (FARCALL_INST_SIZE + sizeof(ULONG_PTR))
+
+struct FARCALLHOOK
+{
+	BYTE Buffer[FARCALLHOOK_SIZE];
+
+	FARCALLHOOK(
+		__in const void* addrOfHook
+		)
+	{
+		//call rsp
+		memcpy(Buffer, "\xff\x15\x00\x00\x00\x00", FARCALL_INST_SIZE);
+		*reinterpret_cast<ULONG_PTR*>(&Buffer[FARCALL_INST_SIZE]) = reinterpret_cast<ULONG_PTR>(addrOfHook);
+	}
 };
 
 class CRelCallHook
@@ -103,8 +127,8 @@ public:
 	CRelCallHook(
 		__in void* addrToHook,
 		__in const void* addrOfHook
-		) : m_relCallHook((ULONG)(ULONG_PTR)((ULONG_PTR)addrOfHook - (ULONG_PTR)addrToHook - SIZE_REL_CALL)),
-			m_coldPatch(addrToHook, m_relCallHook.Buffer)
+		) : m_farCallHook(addrOfHook),
+			m_coldPatch(addrToHook, m_farCallHook.Buffer)
 	{
 	}
 
@@ -120,8 +144,8 @@ public:
 	}
 
 private:
-	RELCALLHOOK m_relCallHook;
-	CColdPatch<SIZE_REL_CALL> m_coldPatch;
+	FARCALLHOOK m_farCallHook;
+	CColdPatch<FARCALLHOOK_SIZE> m_coldPatch;
 };
 
 #endif //__COLDPATCHER_H__

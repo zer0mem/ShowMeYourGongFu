@@ -26,9 +26,11 @@ CDbiMonitor CDbiMonitor::m_instance;
 void* CDbiMonitor::PageFaultHandlerPtr[MAX_PROCID];
 KEVENT CDbiMonitor::m_patchGuardEvents[MAX_PROCID];
 
+CQueue< CAutoTypeMalloc<TRACE_INFO> > CDbiMonitor::m_branchInfoQueue;
+
+
 CDbiMonitor::CDbiMonitor() :
-	CSingleton(m_instance),
-	m_branchInfo(KeQueryActiveProcessorCount(NULL))
+	CSingleton(m_instance)
 {
 	RtlZeroMemory(m_syscalls, sizeof(m_syscalls));
 	RtlZeroMemory(PageFaultHandlerPtr, sizeof(PageFaultHandlerPtr));
@@ -69,7 +71,8 @@ void CDbiMonitor::Install()
 	if (CCRonos::EnableVirtualization())
 	{
 		CVirtualizedCpu* v_cpu = m_vCpu;
-		for (BYTE i = 0; i < m_branchInfo.GetCount(); i++, v_cpu++)
+		size_t cores_count = KeQueryActiveProcessorCount(NULL);
+		for (BYTE i = 0; i < cores_count; i++, v_cpu++)
 		{
 
 #if HYPERVISOR
@@ -79,7 +82,7 @@ void CDbiMonitor::Install()
 #endif
 
 			{
-
+				//should be implemented after patach guard is disabled ...
 				InstallPageFaultHooks();
 
 				int CPUInfo[4] = {0};
@@ -184,12 +187,6 @@ bool CDbiMonitor::GetProcess(
 	return m_procMonitor.GetProcessWorker().GetProcess(processId, process);
 }
 
-//dbgprint helper
-CStack<TRACE_INFO>& CDbiMonitor::GetBranchStack()
-{
-	return m_branchStack;
-}
-
 
 //-----------------------------------------------------------
 // ****************** MONITORING CALLBACKS ******************
@@ -201,12 +198,10 @@ EXTERN_C void* SysCallCallback(
 	__inout ULONG_PTR reg [REG_COUNT]
 	)
 {
-	TRACE_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
-
 	CProcess2Fuzz* fuzzed_proc;
 	if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 	{
-		if (fuzzed_proc->Syscall(reg, &branch_info))
+		if (fuzzed_proc->Syscall(reg))
 			return NULL;
 	}
 	else
@@ -233,9 +228,6 @@ EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	//PageFault hooked == BranchInfo have to find valid ptr
-	TRACE_INFO branch_info = *CDbiMonitor::GetInstance().BranchInfoUnsafe(KeGetCurrentProcessorNumber());
-
 	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 	PFIRET* iret = PPAGE_FAULT_IRET(reg);
 
@@ -248,8 +240,9 @@ EXTERN_C void* PageFault(
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 		{
+
 			//DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
-			if (fuzzed_proc->PageFault(fault_addr, reg, &branch_info))
+			if (fuzzed_proc->PageFault(fault_addr, reg))
 				return NULL;
 		}
 		else
@@ -291,6 +284,13 @@ void CDbiMonitor::TrapHandler(
 				{
 					ins_addr -= ins_len;
 
+					if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(ins_addr)))
+					{
+
+						vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
+						return;
+					}
+
 					ULONG_PTR src = (ULONG_PTR)MM_LOWEST_USER_ADDRESS;
 					ULONG_PTR msr_btf_part;
 					vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part);
@@ -301,45 +301,57 @@ void CDbiMonitor::TrapHandler(
 							if (rdmsr(MSR_LASTBRANCH_0_TO_IP + i) == ins_addr)
 							{
 								src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
+								if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
+								{
+									vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
+
+									return;//do not handle ...
+								}
 								break;
 							}
 						}
 					}
+					//if just single step!
 					else
 					{
 						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, (msr_btf_part | BTF | LBR));
 					}
 
-					if (CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
+					CAutoTypeMalloc<TRACE_INFO>* _trace_info = m_branchInfoQueue.Pop();
+					if (_trace_info)
 					{
-						TRACE_INFO* branch_i = CDbiMonitor::GetInstance().BranchInfoUnsafe(CVirtualizedCpu::GetCoreId(reg));
-						if (branch_i)
+						TRACE_INFO* trace_info = _trace_info->GetMemory();
+						if (trace_info)
 						{
-							if (!vmread(VMX_VMCS64_GUEST_RSP, &branch_i->StackPtr))
+							if (!vmread(VMX_VMCS64_GUEST_RSP, &trace_info->StackPtr.Value))
 							{
-								branch_i->Eip.Value = reinterpret_cast<const void*>(ins_addr);
-								branch_i->PrevEip.Value = reinterpret_cast<const void*>(src);
+								trace_info->Eip.Value = reinterpret_cast<const void*>(ins_addr);
+								trace_info->PrevEip.Value = reinterpret_cast<const void*>(src);
+								trace_info->Flags.Value = rflags;
 
-								branch_i->Flags.Value = rflags;
-								
+
 								//disable trap flag and let handle it by PageFault Hndlr
 								vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 								//set eip to non-exec mem for quick recognization by PageFault handler
-								vmwrite(VMX_VMCS64_GUEST_RIP, branch_i->StackPtr.Value);
+								vmwrite(VMX_VMCS64_GUEST_RSP, &trace_info->StackPtr.Value[-(IRetCount + REG_COUNT + 1)]);//iret(5) + popaq(0x10) + semaphore(1)
+								vmwrite(VMX_VMCS64_GUEST_RIP, _trace_info);
+
+								for (int i = 0; i < 8; i++)
+									reg[REG_X64_COUNT] = 0xbadf00d | i;
+
 
 								return;
 							}
-						}
+						}						
 					}
+
+					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
+					vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
 				}
+
 			}
 		}
 	}
-
-	ULONG_PTR rflags = 0;
-	vmread(VMX_VMCS_GUEST_RFLAGS, &rflags);
-	vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-	vmwrite(VMX_VMCS64_GUEST_RIP, FAST_CALL);
 }
 
 //-----------------------------------------------------------
@@ -444,8 +456,6 @@ void CDbiMonitor::CPUIDCALLBACK(
 		if (0xBADF00D0 == (ULONG)reg[RAX])
 		{
 			reg[RBX] = 0xBADF00D0;
-
-			//CDbiMonitor::GetInstance().PrintfStack.Push(0xDEADCAFE);
 
 			ULONG_PTR rflags = 0;
 			vmread(VMX_VMCS_GUEST_RFLAGS, &rflags);

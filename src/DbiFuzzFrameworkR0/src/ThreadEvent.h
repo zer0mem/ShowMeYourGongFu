@@ -93,13 +93,18 @@ struct DBG_THREAD_EVENT :
 	);
 
 	__checkReturn
+	bool LoadTrapContext(
+		__in ULONG_PTR reg[REG_COUNT],
+		__in TRACE_INFO branchInfo
+	);
+
+	__checkReturn
 	virtual
 	bool UpdateContext(
 		__in ULONG_PTR reg[REG_COUNT],
 		__in const EVENT_THREAD_INFO& cthreadInfo
 		) override;
 
-private:
 	void* m_iret;
 };
 

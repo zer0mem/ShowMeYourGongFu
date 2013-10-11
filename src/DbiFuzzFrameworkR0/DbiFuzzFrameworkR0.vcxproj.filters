@@ -157,6 +157,9 @@
     <ClInclude Include="..\Common\Kernel\MemoryMapping.h">
       <Filter>Common\Kernel</Filter>
     </ClInclude>
+    <ClInclude Include="..\Common\utils\Queue.hpp">
+      <Filter>Common\utils</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="driver_template.rc" />

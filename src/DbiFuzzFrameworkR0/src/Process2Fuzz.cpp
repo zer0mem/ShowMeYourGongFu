@@ -108,11 +108,12 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 // ****************** DBI TARGET EVENTS ******************
 //--------------------------------------------------------
 
+#include "DbiMonitor.h"
+
 __checkReturn
 bool CProcess2Fuzz::PageFault( 
 	__in BYTE* faultAddr, 
-	__inout ULONG_PTR reg[REG_COUNT],
-	__in_opt TRACE_INFO* branchInfo /* = NULL */
+	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
 	ResolveThreads();
@@ -123,6 +124,7 @@ bool CProcess2Fuzz::PageFault(
 		CThreadEvent* fuzz_thread;
 		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
+			/*
 			// { ************************** INSTAL EP HOOK, freeze app at the begining - w8 for r3tracer ************************** 
 			if (!m_installed && m_mainImg && m_extRoutines[ExtHook])
 			{
@@ -134,14 +136,26 @@ bool CProcess2Fuzz::PageFault(
 					return true;
 			}
 			// } ************************** INSTAL EP HOOK ************************** 
-
+			*/
 			// { ************************** HANDLE HV TRAP EXIT ************************** 
 			if (iret->Return == faultAddr)
 			{
-				if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
+				//if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
+				if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(iret->Return))
 				{
-					if (iret->Return == branchInfo->StackPtr.Value)
+					//if (iret->Return == branchInfo->StackPtr.Value)
+					const CAutoTypeMalloc<TRACE_INFO>* trace_info = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(iret->Return);
+					DbgPrint("\n iret->Return %p", iret->Return);
+					DbgPrint("\n StackPtr.Value %p", trace_info->GetMemory()->StackPtr.Value);
+					if (fuzz_thread->GetStack().IsInRange(trace_info->GetMemory()->StackPtr.Value))
 					{
+						DbiTraceEvent(reg, trace_info->GetMemory());//!!!!!!!!!!!!!
+
+						//push back to trace_info queue
+						CDbiMonitor::m_branchInfoQueue.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info));
+
+						DbgPrint("\n set bp at : %p \n", m_extRoutines[ExtTrapTrace]);
+						KeBreak();
 						//handle branch tracing - callback from HV
 						iret->Return = m_extRoutines[ExtTrapTrace];
 
@@ -214,6 +228,7 @@ bool CProcess2Fuzz::DbiTraceEvent(
 	__in TRACE_INFO* branchInfo
 	)
 {
+	DbgPrint("saved RFLAGS -> %p", branchInfo->Flags.uValue);
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 	{
@@ -500,8 +515,7 @@ bool CProcess2Fuzz::DbiSetHook(
 
 __checkReturn
 bool CProcess2Fuzz::Syscall( 
-	__inout ULONG_PTR reg[REG_COUNT],
-	__in_opt TRACE_INFO* branchInfo /* = NULL */
+	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
 	ULONG_PTR ring0rsp = reg[RSP];
@@ -523,8 +537,8 @@ bool CProcess2Fuzz::Syscall(
 
 		break;
 	case SYSCALL_TRACE_FLAG:
-		if (m_processId == PsGetCurrentProcessId())
-			status = DbiTraceEvent(reg, branchInfo);
+		if (m_processId == PsGetCurrentProcessId())//ERROR
+			KeBreak();
 		else
 			status = DbiRemoteTrace(reg);
 

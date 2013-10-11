@@ -40,8 +40,9 @@ public:
 
 protected:
 	BYTE m_cpuCore;
-	CVmx m_vmx;
 	ULONG_PTR* m_hvStack;
+
+	CVmx m_vmx;
 };
 
 #endif //__VIRTUALIZEDCPU_H__

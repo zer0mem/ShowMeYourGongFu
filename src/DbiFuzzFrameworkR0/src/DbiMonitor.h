@@ -15,9 +15,9 @@
 #include "../Common/utils/ProcessMonitor.hpp"
 #include "Process2Fuzz.h"
 
-#include "../Common/Stack.hpp"
-
 #include "../../Common/base/AutoMalloc.h"
+
+#include "../../Common/utils/Queue.hpp"
 
 class CDbiMonitor : 
 	public CCRonos,
@@ -46,29 +46,48 @@ public:
 		__in void* pfHndlr 
 		);
 
-	TRACE_INFO* BranchInfoUnsafe(
-		__in size_t ind
-		)
-	{
-		return &m_branchInfo[ind];
-	}
-
-	CStack<TRACE_INFO>& GetBranchStack();
-
 	__forceinline
 	__checkReturn
 	bool GetProcess(
 		__in HANDLE processId,
 		__inout CProcess2Fuzz** process
-		);
-	
-	CStack<ULONG_PTR> PrintfStack;
+		);	
+
+	static CQueue< CAutoTypeMalloc<TRACE_INFO> > m_branchInfoQueue;
 
 	static
-		void InstallPageFaultHooks();
+	void CreateThread()
+	{
+		KeBreak();
+		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoQueue.Create();
+		if (trace_info)
+		{
+			::new(trace_info) CAutoTypeMalloc<TRACE_INFO>;
+			trace_info->GetMemory()->Reason.Value = 3;
+			m_branchInfoQueue.Push(trace_info);
+
+			trace_info = m_branchInfoQueue.Pop();
+			DbgPrint("\n poped expt : %p", trace_info->GetMemory()->Reason.Value);
+			m_branchInfoQueue.Push(trace_info);
+		}
+	}
 
 	static
-		void DisablePatchGuard(
+	void RemoveThread()
+	{
+		KeBreak();
+		//add if -> for if not succesfull create thread .. some kind of counter ...
+		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoQueue.Pop();
+		ASSERT(trace_info);
+
+		m_branchInfoQueue.Remove(trace_info);
+	}
+
+	static
+	void InstallPageFaultHooks();
+
+	static
+	void DisablePatchGuard(
 		__in BYTE coreId
 		);
 
@@ -108,8 +127,6 @@ protected:
 		__inout ULONG_PTR reg[REG_COUNT] 
 	);
 
-	CStack<TRACE_INFO> m_branchStack;
-	CAutoTypeMalloc<TRACE_INFO> m_branchInfo;
 	CProcessMonitor<CProcess2Fuzz> m_procMonitor;
 
 protected:

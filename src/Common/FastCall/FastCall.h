@@ -95,7 +95,7 @@ struct TRACE_INFO
 {
 	TYPE_X86COMPATIBLE<const void*> Eip;
 	TYPE_X86COMPATIBLE<const void*> PrevEip;
-	TYPE_X86COMPATIBLE<const ULONG_PTR*> StackPtr;
+	TYPE_X86COMPATIBLE<ULONG_PTR*> StackPtr;
 	TYPE_X86COMPATIBLE<ULONG64> Flags;
 	TYPE_X86COMPATIBLE<ULONG64> Reason;
 };
@@ -112,7 +112,7 @@ struct MEMORY_ACCESS
 
 struct DBI_OUT_CONTEXT
 {
-	ULONG_PTR GeneralPurposeContext[DBI_FLAGS + 1];
+	ULONG_PTR GeneralPurposeContext[REG_COUNT + 1];
 	TRACE_INFO TraceInfo;
 	MEMORY_ACCESS MemoryInfo;
 };

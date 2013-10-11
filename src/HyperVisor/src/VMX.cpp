@@ -179,12 +179,36 @@ bool CVmx::VmcsInit()
 	vmwrite(VMX_VMCS_CTRL_EPTP_FULL, m_guestState.CR3 | VMX_EPT_MEMTYPE_WB | (VMX_EPT_PAGE_WALK_LENGTH_DEFAULT << VMX_EPT_PAGE_WALK_LENGTH_SHIFT));
 	vmwrite(VMX_VMCS_CTRL_EPTP_HIGH, m_guestState.CR3 >> 32);
 
+
+
+	DbgPrint("\ncr0 %p", m_guestState.CR0);	
+	DbgPrint("\ncr3 %p", m_guestState.CR3);
+	DbgPrint("\ncr4 %p", m_guestState.CR4);
+
+	//set descriptor tables
+	DbgPrint("\nidtr base %p", m_guestState.Idtr.base);
+	DbgPrint("\nidtr limit %p", m_guestState.Idtr.limit);
+	DbgPrint("\ngdtr base %p", m_guestState.Gdtr.base);
+	DbgPrint("\ngdtr limit %p", m_guestState.Gdtr.limit);	
+
+	//SELECTORS
+	DbgPrint("\ncs  %p", m_guestState.Cs);
+
+	DbgPrint("\nds  %p", m_guestState.Ds);
+	DbgPrint("\nes  %p", m_guestState.Es);
+	DbgPrint("\nss  %p", m_guestState.Ss);	
+	DbgPrint("\nfs  %p", m_guestState.Fs);
+	DbgPrint("\ngs  %p", m_guestState.Gs);	
+
+	DbgPrint("\nldtr %p", m_guestState.Ldtr);
+	DbgPrint("\ntr  %p", m_guestState.Tr);
+
 	m_cpuActivated = true;
 
 	vmlaunch();
 
-	KeBreak();
 	DbgPrint("\nhv on failed\n");
+	KeBreak();
 	return false;
 }
 
@@ -330,4 +354,29 @@ void CVmx::SetSegSelector(
 	vmwrite(VMX_VMCS32_GUEST_ES_ACCESS_RIGHTS + index, seg_sel.rights);
 	vmwrite(VMX_VMCS16_GUEST_FIELD_ES + index, segSelector);
 	vmwrite(VMX_VMCS64_GUEST_ES_BASE + index, seg_sel.base);
+}
+
+//not working concept, yet ..
+void CVmx::VmcsToRing0()
+{
+	//set guest CR
+	vmwrite(VMX_VMCS64_GUEST_CR0, m_guestState.CR0);
+	vmwrite(VMX_VMCS64_GUEST_CR4, m_guestState.CR4);
+	vmwrite(VMX_VMCS64_GUEST_DR7, 0x400);
+
+	//set descriptor tables
+	vmwrite(VMX_VMCS64_GUEST_IDTR_BASE, m_guestState.Idtr.base);
+	vmwrite(VMX_VMCS32_GUEST_IDTR_LIMIT, m_guestState.Idtr.limit);
+	vmwrite(VMX_VMCS64_GUEST_GDTR_BASE, m_guestState.Gdtr.base);
+	vmwrite(VMX_VMCS32_GUEST_GDTR_LIMIT, m_guestState.Gdtr.limit);	
+		
+	//SELECTORS
+	vmwrite(VMX_VMCS16_GUEST_FIELD_CS, m_guestState.Cs);
+	vmwrite(VMX_VMCS16_GUEST_FIELD_DS, m_guestState.Ds);
+	vmwrite(VMX_VMCS16_GUEST_FIELD_ES, m_guestState.Es);
+	vmwrite(VMX_VMCS16_GUEST_FIELD_SS, m_guestState.Ss);
+	vmwrite(VMX_VMCS16_GUEST_FIELD_FS, m_guestState.Fs);
+	vmwrite(VMX_VMCS16_GUEST_FIELD_GS, m_guestState.Gs);
+
+	vmwrite(VMX_VMCS64_GUEST_RSP, m_guestState.SESP);
 }

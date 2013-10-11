@@ -100,7 +100,8 @@ void CProcessContext<THRD, PROC, IMG>::ThreadNotifyRoutine(
 	}
 	else
 	{
-		m_threads.Pop(thread_info);
+		//TODO : AVOID calling ~destructors in SPIN_LOCK!!
+		m_threads.Pop(thread_info);//invoke THREAD.~ -> which is performance fail!
 		m_unresolvedThreads.Pop(threadId);
 	}
 }

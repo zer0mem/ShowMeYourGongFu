@@ -132,11 +132,17 @@ _WaitForFuzzEvent:
 fast_call_monitor endp
 
 ExtTrapTrace proc
-	push [rsp]
-	push [rsp]
-	push [rsp] ;in case of CALL FAR
-	push SYSCALL_TRACE_FLAG
-	call fast_call_event
+	;sub rsp, 5 * sizeof(qword) ; IRETQ
+	;sub rsp, 010h * sizoef(qword) ; popaq 
+	;sub rsp, 1 * sizeof(qword) ; semaphore
+	
+_WaitForFuzzEvent:
+	cmp byte ptr[rsp], 0	; thread friendly :P
+	jz _WaitForFuzzEvent
+
+	add rsp, sizeof(qword) ; semaphore
+	popaq ; load context
+	iretq ; set rip & rsp and continue with tracing
 ExtTrapTrace endp
 
 ExtHook proc

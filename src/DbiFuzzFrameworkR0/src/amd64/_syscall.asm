@@ -1,7 +1,7 @@
 extrn SysCallCallback:proc
 extrn RdmsrHook:proc
 extrn PageFault:proc
-extern PatchGuardHook:proc
+extrn PatchGuardHook:proc
 
 include ..\Common\amd64\common.inc
 

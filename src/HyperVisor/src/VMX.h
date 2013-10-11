@@ -38,6 +38,8 @@ public:
 
 	static void EnableVirtualization();
 
+	void VmcsToRing0();
+
 protected:
 	__checkReturn 
 	bool VmcsInit();

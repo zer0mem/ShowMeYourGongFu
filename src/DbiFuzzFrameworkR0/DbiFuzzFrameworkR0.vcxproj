@@ -305,6 +305,7 @@
     <ClInclude Include="..\Common\utils\ColdPatcher.hpp" />
     <ClInclude Include="..\Common\utils\CSYSCALL.h" />
     <ClInclude Include="..\Common\utils\CSYSCALL.hpp" />
+    <ClInclude Include="..\Common\utils\Queue.hpp" />
     <ClInclude Include="..\Common\utils\SyscallCallbacks.hpp" />
     <ClInclude Include="..\Common\utils\HashString.hpp" />
     <ClInclude Include="..\Common\utils\LockedContainers.hpp" />

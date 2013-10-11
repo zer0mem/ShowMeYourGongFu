@@ -43,15 +43,13 @@ public:
 
 	__checkReturn
 	bool Syscall(
-		__inout ULONG_PTR reg[REG_COUNT],
-		__in_opt TRACE_INFO* branchInfo = NULL
+		__inout ULONG_PTR reg[REG_COUNT]
 		);
 
 	__checkReturn
 	bool PageFault( 
 		__in BYTE* faultAddr, 
-		__inout ULONG_PTR reg[REG_COUNT],
-		__in_opt TRACE_INFO* branchInfo = NULL
+		__inout ULONG_PTR reg[REG_COUNT]
 	);
 
 protected:

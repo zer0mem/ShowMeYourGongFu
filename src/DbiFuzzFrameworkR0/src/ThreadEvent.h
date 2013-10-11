@@ -42,7 +42,7 @@ struct EVENT_THREAD_INFO
 
 	void LoadContext(
 		__in ULONG_PTR reg[REG_COUNT]
-	)
+		)
 	{
 		ProcessId = PsGetCurrentProcessId();
 		EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);

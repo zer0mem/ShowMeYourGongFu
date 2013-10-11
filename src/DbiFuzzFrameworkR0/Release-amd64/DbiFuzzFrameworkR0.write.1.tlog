@@ -1,0 +1,4 @@
+^..\Common\amd64\_instrinsics.asm
+D:\blog\DbiFuzzFramework\git\wtf\ShowMeYourGongFu\src\DbiFuzzFrameworkR0\Release-amd64\_instrinsics.obj
+^src\amd64\_syscall.asm
+D:\blog\DbiFuzzFramework\git\wtf\ShowMeYourGongFu\src\DbiFuzzFrameworkR0\Release-amd64\_syscall.obj

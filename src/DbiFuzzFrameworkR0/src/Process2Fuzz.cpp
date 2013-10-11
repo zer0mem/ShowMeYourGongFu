@@ -145,17 +145,12 @@ bool CProcess2Fuzz::PageFault(
 				{
 					//if (iret->Return == branchInfo->StackPtr.Value)
 					const CAutoTypeMalloc<TRACE_INFO>* trace_info = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(iret->Return);
-					DbgPrint("\n iret->Return %p", iret->Return);
-					DbgPrint("\n StackPtr.Value %p", trace_info->GetMemory()->StackPtr.Value);
 					if (fuzz_thread->GetStack().IsInRange(trace_info->GetMemory()->StackPtr.Value))
 					{
-						DbiTraceEvent(reg, trace_info->GetMemory());//!!!!!!!!!!!!!
+						DbiTraceEvent(reg, trace_info->GetMemory());//!!!!!!!!!!!!! ??
 
 						//push back to trace_info queue
 						CDbiMonitor::m_branchInfoQueue.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info));
-
-						DbgPrint("\n set bp at : %p \n", m_extRoutines[ExtTrapTrace]);
-						KeBreak();
 						//handle branch tracing - callback from HV
 						iret->Return = m_extRoutines[ExtTrapTrace];
 
@@ -210,7 +205,6 @@ bool CProcess2Fuzz::DbiHook(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	KeBreak();
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 	{
@@ -228,7 +222,6 @@ bool CProcess2Fuzz::DbiTraceEvent(
 	__in TRACE_INFO* branchInfo
 	)
 {
-	DbgPrint("saved RFLAGS -> %p", branchInfo->Flags.uValue);
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 	{
@@ -241,12 +234,18 @@ bool CProcess2Fuzz::DbiTraceEvent(
 				//is system logic should be moved to user mode r3 tracer ...
 				if (dst_img->IsSystem())
 				{
+					void* ret;
+					{//obtain ret from stack -> because jmp to another module must fallback .. - potential point of fail, too much prediction :P
+						CMdl ret_mdl(branchInfo->StackPtr.Value, sizeof(void*));
+						void* _ret = const_cast<void*>(ret_mdl.ReadPtrUser());
+						ret = _ret ? *reinterpret_cast<ULONG_PTR**>(_ret) : NULL;
+					}
 					CImage* target_img;
-					if (GetImage(reinterpret_cast<void*>(reg[DBI_RETURN]), &target_img))
+					if (GetImage(ret, &target_img))
 					{
-						target_img->SetUpNewRelHook(reinterpret_cast<void*>(reg[DBI_RETURN]), m_extRoutines[ExtHook]);
+						target_img->SetUpNewRelHook(ret, m_extRoutines[ExtHook]);
 						branchInfo->Flags.Value &= (~TRAP);
-						DbgPrint("-----------> %p %p %p", branchInfo->Eip.Value, branchInfo->PrevEip.Value, reg[DBI_RETURN]);
+						DbgPrint("-----------> %p %p %p", branchInfo->Eip.Value, branchInfo->PrevEip.Value, ret);
 					}
 				}
 			}

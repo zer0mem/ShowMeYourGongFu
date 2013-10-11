@@ -126,7 +126,6 @@ bool CThreadEvent::HookEvent(
 
 	m_dbgThreadInfo.DbiOutContext.TraceInfo.PrevEip.Value = ret;
 	m_dbgThreadInfo.DbiOutContext.TraceInfo.Eip.Value = ret;
-	KeBreak();
 	m_dbgThreadInfo.DbiOutContext.TraceInfo.StackPtr.Value = reinterpret_cast<ULONG_PTR*>(reg[RSP]) + (DBI_FLAGS + 1)/*reg context*/ + 1 /*semaphore*/ + 5 /*(4-1) parameters + 2 calls*/ + 2/*syscall smth?*/;
 	m_dbgThreadInfo.DbiOutContext.TraceInfo.Flags.Value = reg[DBI_FLAGS]; //not accurate, flags was meanwhile modified by shellcode from inappfuzzdbi.dll module .. 
 
@@ -155,9 +154,6 @@ bool CThreadEvent::SmartTraceEvent(
 	__in const TRACE_INFO& branchInfo
 	)
 {
-
-	for (int i = 0; i < 8; i++)
-		DbgPrint("\n%p", reg[REG_X64_COUNT]);
 	if (m_dbgThreadInfo.LoadTrapContext(reg, branchInfo))
 		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
 			//return FlipSemaphore(m_dbiThreadInfo);//codecoverme.exe ohack
@@ -323,7 +319,7 @@ bool DBG_THREAD_EVENT::LoadTrapContext(
 	)
 {
 	DbiOutContext.TraceInfo = branchInfo;
-	*DbiOutContext.GeneralPurposeContext = *reg;
+	memcpy(DbiOutContext.GeneralPurposeContext, reg, sizeof(ULONG_PTR) * REG_COUNT);
 
 	ProcessId = PsGetCurrentProcessId(); // for sure here ??
 

@@ -63,11 +63,11 @@ public:
 		if (trace_info)
 		{
 			::new(trace_info) CAutoTypeMalloc<TRACE_INFO>;
-			trace_info->GetMemory()->Reason.Value = 3;
+			trace_info->GetMemory()->StateInfo.ErrorCode.UErrCode = 3;
 			m_branchInfoQueue.Push(trace_info);
 
 			trace_info = m_branchInfoQueue.Pop();
-			DbgPrint("\n poped expt : %p", trace_info->GetMemory()->Reason.Value);
+			DbgPrint("\n poped expt : %p", trace_info->GetMemory()->StateInfo.ErrorCode.UErrCode);
 			m_branchInfoQueue.Push(trace_info);
 		}
 	}
@@ -105,7 +105,7 @@ protected:
 		__inout ULONG_PTR reg[REG_COUNT] 
 	);
 	static 
-	void DisableBTF(
+	void WrMsrSpecialBTF(
 		__inout ULONG_PTR reg[REG_COUNT] 
 	);
 

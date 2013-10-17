@@ -20,6 +20,8 @@
 
 #include "../../Common/Kernel/Process.hpp"
 
+#include "../../Common/utils/VADWalker.h"
+
 struct EVENT_THREAD_INFO 
 {
 	HANDLE ProcessId;
@@ -40,15 +42,11 @@ struct EVENT_THREAD_INFO
 		//KeInitializeEvent(&SyncEvent, NotificationEvent, FALSE);
 	}
 
-	void LoadContext(
+	__checkReturn
+	virtual
+	bool LoadContext(
 		__in ULONG_PTR reg[REG_COUNT]
-		)
-	{
-		ProcessId = PsGetCurrentProcessId();
-		EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
-		ContextOnStack = reinterpret_cast<void*>(reg[DBI_PARAMS]);
-	}
-
+		) = 0;
 
 	__checkReturn
 	virtual
@@ -56,6 +54,9 @@ struct EVENT_THREAD_INFO
 		__in ULONG_PTR reg[REG_COUNT],
 		__in const EVENT_THREAD_INFO& cthreadInfo
 		) = 0;
+
+	__checkReturn 
+	bool FlipSemaphore();
 };
 
 struct DBI_THREAD_EVENT :
@@ -67,6 +68,7 @@ struct DBI_THREAD_EVENT :
 	{ }
 
 	__checkReturn
+	virtual
 	bool LoadContext(
 		__in ULONG_PTR reg[REG_COUNT]
 		);
@@ -88,15 +90,25 @@ struct DBG_THREAD_EVENT :
 	{ }
 
 	__checkReturn
-	bool LoadContext(
-		__in ULONG_PTR reg[REG_COUNT]
-	);
+	bool LoadTrapContext( 
+		__in ULONG_PTR reg[REG_COUNT],
+		__in const TRACE_INFO* branchInfo, 
+		__in const PFIRET* pfIRet
+		);
 
 	__checkReturn
-	bool LoadTrapContext(
+	bool LoadHookContext( 
 		__in ULONG_PTR reg[REG_COUNT],
-		__in TRACE_INFO branchInfo
-	);
+		__in PFIRET* pfIRet
+		);
+
+	__checkReturn
+	bool LoadPFContext( 
+		__in ULONG_PTR reg[REG_COUNT],
+		__in CMemoryRange* mem, 
+		__in PFIRET* pfIRet,
+		__in const BYTE* faultAddr
+		);
 
 	__checkReturn
 	virtual
@@ -105,7 +117,13 @@ struct DBG_THREAD_EVENT :
 		__in const EVENT_THREAD_INFO& cthreadInfo
 		) override;
 
-	void* m_iret;
+	void* IRet;
+
+protected:
+	__checkReturn
+	bool LoadContext(
+		__in ULONG_PTR reg[REG_COUNT]
+	);
 };
 
 class CThreadEvent :
@@ -114,50 +132,39 @@ class CThreadEvent :
 public:	
 	CThreadEvent(
 		__in HANDLE threadId,
-		__in HANDLE parentProcessId
+		__in HANDLE parentProcessId,
+		__in CVadScanner& vad
 		);
 
 	~CThreadEvent();
 
 // FUZZ MONITOR HANDLER support routines
-	__checkReturn
-	bool HookEvent(
-		__in CImage* img,
-		__in ULONG_PTR reg[REG_COUNT]
-	);
+	void HookEvent( 
+		__in ULONG_PTR reg[REG_COUNT], 
+		__in PFIRET* pfIRet 
+		);
 
-	__checkReturn
-	bool SmartTraceEvent(
-		__in ULONG_PTR reg[REG_COUNT],
-		__in const TRACE_INFO& branchInfo
+	void SmartTraceEvent( 
+		__in ULONG_PTR reg[REG_COUNT], 
+		__in const TRACE_INFO* branchInfo, 
+		__in const PFIRET* pfIRet 
+		);
+
+	void RegisterMemoryAccess( 
+		__in ULONG_PTR reg[REG_COUNT], 
+		__in const BYTE* faultAddr, 
+		__in CMemoryRange* mem, 
+		__in PFIRET* pfIRret
+		);
+
+	bool Init(
+		__in ULONG_PTR reg[REG_COUNT]
 	);
 
 	__checkReturn
 	bool SmartTrace(
 		__in ULONG_PTR reg[REG_COUNT]
-		);
-		
-	__checkReturn
-	bool EnumMemory(
-		__in ULONG_PTR reg[REG_COUNT]
-		);
-		
-	__checkReturn
-	bool WatchMemoryAccess(
-		__in ULONG_PTR reg[REG_COUNT]
-		);
-
-	void RegisterMemoryAccess( 
-		__in const BYTE* faultAddr,
-		__in const ERROR_CODE& access,
-		__in const void* begin,
-		__in size_t size,
-		__in ULONG_PTR flags
-		);
-
-	bool Init(
-		__in ULONG_PTR reg[REG_COUNT]
-		);
+	);
 
 	__checkReturn
 	__forceinline
@@ -167,13 +174,7 @@ public:
 			m_initialized = m_ethread.Initialize();
 		return m_initialized;
 	}
-
-	__forceinline
-	MEMORY_ACCESS& GetMemoryAccess()
-	{
-		return m_dbgThreadInfo.DbiOutContext.MemoryInfo;
-	}
-
+	
 	__forceinline
 	CRange<ULONG_PTR>& GetStack()
 	{
@@ -186,43 +187,16 @@ public:
 		return m_ethread;
 	}
 
-	__checkReturn
-	__forceinline
-	bool IsMemory2Watch(
-		__in const void* addr,
-		__in size_t size
-		)
-	{
-		return m_mem2watch.Find(CMemoryRange(reinterpret_cast<const BYTE*>(addr), size));
-	}
-
-	__checkReturn
-	__forceinline
-	bool GetMemory2Watch(
-		__in const void* addr,
-		__in size_t size,
-		__inout CMemoryRange** mem
-		)
-	{
-		return m_mem2watch.Find(CMemoryRange(reinterpret_cast<const BYTE*>(addr), size), mem);
-	}
-
-protected:
-	__checkReturn 
-	bool FlipSemaphore(
-		__in const EVENT_THREAD_INFO& eventThreadInfo
-		);
-
 protected:
 	DBI_THREAD_EVENT m_dbiThreadInfo;
 	DBG_THREAD_EVENT m_dbgThreadInfo;
 
 	bool m_initialized;
-	CLockedAVL<CMemoryRange> m_mem2watch;
 
 private:
 	//reference this ethread in m$
 	CEthread m_ethread;
+	CVadScanner& m_vad;
 };
 
 template<class TYPE>

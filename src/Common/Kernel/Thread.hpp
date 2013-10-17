@@ -40,8 +40,6 @@ public:
 		{
 			if (!Id && NT_SUCCESS(PsLookupThreadByThreadId(m_threadId, &Id)))
 			{
-				m_vadScanner.Init(Id);
-
 				CPassiveLvl irql;
 				void* teb;
 				if (teb = GetWow64Teb(Id))
@@ -59,11 +57,6 @@ public:
 	HANDLE ThreadId()
 	{
 		return m_threadId;
-	}
-
-	CVadScanner& VadScanner()
-	{
-		return m_vadScanner;
 	}
 
 	PEPROCESS GetEProcess()
@@ -110,7 +103,6 @@ private:
 protected:
 	HANDLE m_threadId;
 	CRange<ULONG_PTR> m_stack;
-	CVadScanner m_vadScanner;
 };
 
 #endif //__THREAD_H__

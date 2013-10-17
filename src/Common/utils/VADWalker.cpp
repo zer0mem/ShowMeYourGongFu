@@ -61,24 +61,9 @@ protected:
 };
 
 CVadScanner::CVadScanner( 
-	__in PETHREAD ethread
-	)
+	__in PEPROCESS process
+	) : m_process(process)
 {
-	Init(ethread);
-}
-
-CVadScanner::CVadScanner() :
-	m_thread(NULL),
-	m_process(NULL)
-{
-}
-
-void CVadScanner::Init( 
-	__in PETHREAD ethread 
-	)
-{
-	m_thread = ethread;
-	m_process = IoThreadToProcess(ethread);
 }
 
 __checkReturn 

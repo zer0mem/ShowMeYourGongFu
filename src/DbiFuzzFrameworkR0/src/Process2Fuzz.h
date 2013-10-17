@@ -12,7 +12,6 @@
 #include "../../Common/utils/LockedContainers.hpp"
 #include "../../Common/utils/SyscallCallbacks.hpp"
 #include "../../Common/utils/MemoryRange.h"
-
 #include "ThreadEvent.h"
 #include "ImageInfo.h"
 
@@ -26,6 +25,8 @@ public:
 		__in HANDLE processId,
 		__inout_opt PS_CREATE_NOTIFY_INFO* createInfo
 		);
+
+	~CProcess2Fuzz();
 
 	static
 	__checkReturn
@@ -98,23 +99,30 @@ protected:
 		return false;
 	}
 
-private:
+private:		
+//tracer
 	__checkReturn
-	bool DbiHook(
+	bool DbiInit(
 		__inout ULONG_PTR reg[REG_COUNT]
-		);
-
-	__checkReturn
-	bool DbiTraceEvent(
-		__inout ULONG_PTR reg[REG_COUNT],
-		__in TRACE_INFO* branchInfo
-		);
+		);	
 
 	__checkReturn
 	bool DbiRemoteTrace(
 		__inout ULONG_PTR reg[REG_COUNT]
-	);
+	);	
 
+//'hooks' - tracer callbacks
+	__checkReturn
+	bool DbiSetAddressBreakpoint(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+
+	__checkReturn
+	bool DbiSetMemoryBreakpoint(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+
+//threads walker
 	__checkReturn
 	bool DbiEnumThreads(
 		__inout ULONG_PTR reg[REG_COUNT]
@@ -125,21 +133,7 @@ private:
 		__inout ULONG_PTR reg[REG_COUNT]
 		);
 
-	__checkReturn
-	bool DbiEnumMemory(
-		__inout ULONG_PTR reg[REG_COUNT]
-		);
-		
-	__checkReturn
-	bool DbiWatchMemoryAccess(
-		__inout ULONG_PTR reg[REG_COUNT]
-		);
-		
-	__checkReturn
-	bool DbiInit(
-		__inout ULONG_PTR reg[REG_COUNT]
-		);		
-		
+//module monitor
 	__checkReturn
 	bool DbiEnumModules(
 		__inout ULONG_PTR reg[REG_COUNT]
@@ -150,6 +144,12 @@ private:
 		__inout ULONG_PTR reg[REG_COUNT]
 		);
 		
+//memory dumper
+	__checkReturn
+	bool DbiEnumMemory(
+		__inout ULONG_PTR reg[REG_COUNT]
+		);
+
 	__checkReturn
 	bool DbiDumpMemory(
 		__inout ULONG_PTR reg[REG_COUNT]
@@ -160,13 +160,10 @@ private:
 		__inout ULONG_PTR reg[REG_COUNT]
 		);
 
-	__checkReturn
-	bool DbiSetHook(
-		__inout ULONG_PTR reg[REG_COUNT]
-	);
-
 protected:
 	bool m_installed;
+
+	CLockedAVL<CMemoryRange> m_mem2watch;
 
 	const void* m_extRoutines[ExtCount];
 };

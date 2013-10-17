@@ -45,6 +45,16 @@ typedef const void *LPCVOID;
 
 #define DIRTY_FLAG ((ULONG_PTR)1 << 32)
 
+enum EnumIRET
+{
+	IReturn = 0,
+	ICodeSegment,
+	IFlags,
+	IRsp,
+	IStackSegment,
+	IRetCount
+};
+
 #pragma pack(push, 1)
 
 struct ERROR_CODE
@@ -61,12 +71,19 @@ struct ERROR_CODE
 	};
 };
 
+struct IRET
+{
+	void* Return;
+	ULONG_PTR CodeSegment;
+	ULONG_PTR Flags;
+	ULONG_PTR* StackPointer;
+	ULONG_PTR StackSegment;
+};
+
 struct PFIRET
 {
 	ERROR_CODE ErrorCode;
-	const void* Return;
-	ULONG_PTR CodeSegment;
-	ULONG_PTR Flags;
+	IRET IRet;
 };
 
 #pragma pack(pop)

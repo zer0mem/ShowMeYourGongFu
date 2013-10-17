@@ -14,6 +14,8 @@
 #include "../Kernel/Thread.hpp"
 #include "LockedContainers.hpp"
 
+#include "../../Common/utils/VADWalker.h"
+
 //define ext-interface
 template<class THRD, class PROC, class IMG>
 class CProcessContext
@@ -30,7 +32,8 @@ public:
 		) : m_processId(processId), 
 			m_parentProcessId(createInfo ? createInfo->ParentProcessId : NULL),
 			m_mainImg(NULL),
-			m_internalError(false)
+			m_internalError(false),
+			m_vad(process)
 	{
 	}
 
@@ -93,6 +96,8 @@ public:
 protected:
 	HANDLE m_processId;
 	HANDLE m_parentProcessId;
+
+	CVadScanner m_vad;
 
 	CLockedAVL<HANDLE> m_unresolvedThreads;
 

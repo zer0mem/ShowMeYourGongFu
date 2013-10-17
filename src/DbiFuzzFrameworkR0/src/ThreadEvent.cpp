@@ -23,62 +23,21 @@ EXTERN_C void syscall_instr_epilogue();
 
 CThreadEvent::CThreadEvent(
 	__in HANDLE threadId, 
-	__in HANDLE parentProcessId
+	__in HANDLE parentProcessId,
+	__in CVadScanner& vad
 	) : THREAD_INFO(threadId, parentProcessId),
 		m_dbgThreadInfo(PsGetCurrentProcessId()),
 		m_dbiThreadInfo(parentProcessId),
 		m_ethread(threadId),
-		m_initialized(false)
+		m_initialized(false),
+		m_vad(vad)
 {
 	CDbiMonitor::CreateThread();
 }
 
 CThreadEvent::~CThreadEvent()
 {
-	CMemoryRange* mem = NULL;
-	m_mem2watch.Find(CMemoryRange(NULL, 1), &mem);
-	if (mem)
-	{
-		do
-		{
-			CMMU::SetValid(mem->Begin(), mem->GetSize());
-		} while(m_mem2watch.GetNext(*mem, &mem));
-	}
-
 	CDbiMonitor::RemoveThread();
-}
-
-void CThreadEvent::RegisterMemoryAccess( 
-	__in const BYTE* faultAddr,
-	__in const ERROR_CODE& access,
-	__in const void* begin,
-	__in size_t size,
-	__in ULONG_PTR flags
-
-	)
-{
-	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Memory.Value = faultAddr;
-	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Access.Value = access;
-	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Begin.Value = begin;
-	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Size.Value = size;
-	m_dbgThreadInfo.DbiOutContext.MemoryInfo.Flags.Value = (ULONG)flags;
-
-	if (CMMU::IsAccessed(faultAddr))
-	{
-		CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));
-
-		if (access.WriteAccess)
-		{
-			CMdl mdl(faultAddr, sizeof(ULONG_PTR));
-			const ULONG_PTR* val = reinterpret_cast<const ULONG_PTR*>(mdl.ReadPtr());
-			if (val)
-				m_dbgThreadInfo.DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
-		}
-	}
-	else
-	{
-		m_dbgThreadInfo.DbiOutContext.MemoryInfo.OriginalValue.Value = 0;
-	}
 }
 
 //--------------------------------------------------------
@@ -86,17 +45,22 @@ void CThreadEvent::RegisterMemoryAccess(
 //--------------------------------------------------------
 
 __checkReturn 
-bool CThreadEvent::FlipSemaphore( 
-	__in const EVENT_THREAD_INFO& eventThreadInfo
-	)
+bool EVENT_THREAD_INFO::FlipSemaphore()
 {
-	if (eventThreadInfo.EventSemaphor)
+/*
+//when trace r0
+			KeBreak();
+			KeResetEvent(&m_dbgThreadInfo.SyncEvent);
+			KeSetEvent(&m_dbiThreadInfo.SyncEvent, MAXIMUM_PRIORITY, TRUE);
+			KeWaitForSingleObject(&m_dbgThreadInfo.SyncEvent, Executive, KernelMode, FALSE, 0);
+*/
+	if (EventSemaphor)
 	{
-		CEProcess eprocess(eventThreadInfo.ProcessId);
+		CEProcess eprocess(ProcessId);
 		CAutoEProcessAttach process(eprocess);
 		if (eprocess.IsAttached())
 		{
-			CMdl event_semaphor(eventThreadInfo.EventSemaphor, sizeof(BYTE));
+			CMdl event_semaphor(EventSemaphor, sizeof(BYTE));
 			volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.WritePtr());
 			if (semaphor)
 			{
@@ -107,70 +71,114 @@ bool CThreadEvent::FlipSemaphore(
 	return false;
 }
 
+
 //----------------------------------------------------------------------
 // ****************** MONITOR DLL INJECTED DBI HELPER ******************
 //----------------------------------------------------------------------
 
-__checkReturn
-bool CThreadEvent::HookEvent(
-	__in CImage* img, 
-	__in ULONG_PTR reg[REG_COUNT]
+void CThreadEvent::RegisterMemoryAccess( 
+	__in ULONG_PTR reg[REG_COUNT], 
+	__in const BYTE* faultAddr, 
+	__in CMemoryRange* mem,
+	__in PFIRET* pfIRet 
 	)
 {
-	void* ret = reinterpret_cast<void*>(reg[DBI_RETURN] - FARCALL_INST_SIZE);
-
-//missing check if is hook target also this thread -> if not, then freeze other thread, unhook, trace after hook (or closest event), freeze thread, hook back, and unfreeze freezed threads
-
-	if (img->IsHooked(ret))
-		img->UninstallHook(ret);
-
-	m_dbgThreadInfo.DbiOutContext.TraceInfo.PrevEip.Value = ret;
-	m_dbgThreadInfo.DbiOutContext.TraceInfo.Eip.Value = ret;
-	m_dbgThreadInfo.DbiOutContext.TraceInfo.StackPtr.Value = reinterpret_cast<ULONG_PTR*>(reg[RSP]) + (DBI_FLAGS + 1)/*reg context*/ + 1 /*semaphore*/ + 5 /*(4-1) parameters + 2 calls*/ + 2/*syscall smth?*/;
-	m_dbgThreadInfo.DbiOutContext.TraceInfo.Flags.Value = reg[DBI_FLAGS]; //not accurate, flags was meanwhile modified by shellcode from inappfuzzdbi.dll module .. 
-
-	if (m_dbgThreadInfo.LoadContext(reg))
-	{
-		//(void) because of init is called after main ep hook ..
-		(void)m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
-		(void)FlipSemaphore(m_dbiThreadInfo);
-
-/*
-//when trace r0
-		KeBreak();
-		KeResetEvent(&m_dbgThreadInfo.SyncEvent);
-		KeSetEvent(&m_dbiThreadInfo.SyncEvent, MAXIMUM_PRIORITY, TRUE);
-		KeWaitForSingleObject(&m_dbgThreadInfo.SyncEvent, Executive, KernelMode, FALSE, 0);
-*/
-		return true;
-	}
-
-	return false;
+	if (m_dbgThreadInfo.LoadPFContext(reg, mem, pfIRet, faultAddr))
+		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
+			(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set fot this target-thread, then just freeze target-thread
 }
 
 __checkReturn
-bool CThreadEvent::SmartTraceEvent( 
+bool DBG_THREAD_EVENT::LoadPFContext( 
 	__in ULONG_PTR reg[REG_COUNT], 
-	__in const TRACE_INFO& branchInfo
+	__in CMemoryRange* mem, 
+	__in PFIRET* pfIRet,
+	__in const BYTE* faultAddr
 	)
 {
-	if (m_dbgThreadInfo.LoadTrapContext(reg, branchInfo))
-		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
-			//return FlipSemaphore(m_dbiThreadInfo);//codecoverme.exe ohack
-		{
-			FlipSemaphore(m_dbiThreadInfo);
-			
-/*
-//when trace r0
-			KeBreak();
-			KeResetEvent(&m_dbgThreadInfo.SyncEvent);
-			KeSetEvent(&m_dbiThreadInfo.SyncEvent, MAXIMUM_PRIORITY, TRUE);
-			KeWaitForSingleObject(&m_dbgThreadInfo.SyncEvent, Executive, KernelMode, FALSE, 0);
-*/
-			return true;
-		}
+	pfIRet->IRet.StackPointer = &pfIRet->IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
+	DbiOutContext.TraceInfo.StateInfo = *pfIRet;
+	DbiOutContext.MemoryInfo.Memory.Value = faultAddr;
+	DbiOutContext.MemoryInfo.Begin.Value = mem->Begin();
+	DbiOutContext.MemoryInfo.Size.Value = mem->GetSize();
+	DbiOutContext.MemoryInfo.Flags.Value = static_cast<ULONG>(mem->GetFlags());
+	DbiOutContext.MemoryInfo.OriginalValue.Value = 0;
+	DbiOutContext.TraceInfo.Reason.Value = MemoryAcces;
 
-	return false;
+	if (CMMU::IsAccessed(faultAddr))
+	{
+		CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));
+
+		CMdl mdl(faultAddr, sizeof(ULONG_PTR));
+		const ULONG_PTR* val = reinterpret_cast<const ULONG_PTR*>(mdl.ReadPtr());
+		if (val)
+			DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
+
+		CMMU::SetInvalid(faultAddr, sizeof(ULONG_PTR));
+	}
+
+	return LoadContext(reg);
+}
+
+void CThreadEvent::HookEvent(
+	__in ULONG_PTR reg[REG_COUNT], 
+	__in PFIRET* pfIRet 
+	)
+{
+	if (m_dbgThreadInfo.LoadHookContext(reg, pfIRet))
+		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
+			(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set fot this target-thread, then just freeze target-thread
+}
+
+__checkReturn
+bool DBG_THREAD_EVENT::LoadHookContext( 
+	__in ULONG_PTR reg[REG_COUNT],  
+	__in PFIRET* pfIRet 
+	)
+{
+	pfIRet->IRet.StackPointer = &pfIRet->IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
+	DbiOutContext.TraceInfo.StateInfo = *pfIRet;
+	DbiOutContext.TraceInfo.PrevEip.Value = 0;
+	DbiOutContext.TraceInfo.Reason.Value = Hook;
+	RtlZeroMemory(&DbiOutContext.MemoryInfo, sizeof(DbiOutContext.MemoryInfo));
+	return LoadContext(reg);
+}
+
+__checkReturn
+void CThreadEvent::SmartTraceEvent( 
+	__in ULONG_PTR reg[REG_COUNT], 
+	__in const TRACE_INFO* branchInfo, 
+	__in const PFIRET* pfIRet 
+	)
+{
+	if (m_dbgThreadInfo.LoadTrapContext(reg, branchInfo, pfIRet))
+		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
+			(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set fot this target-thread, then just freeze target-thread
+}
+
+__checkReturn
+bool DBG_THREAD_EVENT::LoadTrapContext( 
+	__in ULONG_PTR reg[REG_COUNT], 
+	__in const TRACE_INFO* branchInfo, 
+	__in const PFIRET* pfIRet 
+	)
+{
+	//save info from VMM trap handler
+	DbiOutContext.TraceInfo = *branchInfo;
+	//cs and ss obtain here, exec as few instructions in VMM as possible ...
+	DbiOutContext.TraceInfo.StateInfo.IRet.CodeSegment = pfIRet->IRet.CodeSegment;
+	DbiOutContext.TraceInfo.StateInfo.IRet.StackSegment = pfIRet->IRet.StackSegment;
+
+	if (DbiOutContext.TraceInfo.StateInfo.IRet.Flags & TRAP)
+		DbiOutContext.TraceInfo.Reason.Value = branchInfo->PrevEip.Value ? BranchTraceFlag : SingleTraceFlag;
+	else
+	{
+		KeBreak();
+		DbiOutContext.TraceInfo.Reason.Value = Hook;
+	}
+
+	RtlZeroMemory(&DbiOutContext.MemoryInfo, sizeof(DbiOutContext.MemoryInfo));
+	return LoadContext(reg);
 }
 
 
@@ -183,7 +191,7 @@ bool CThreadEvent::Init(
 	)
 {
 	reinterpret_cast<EVENT_THREAD_INFO&>(m_dbiThreadInfo).LoadContext(reg);
-	m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
+	m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);//enter monitor-thread to the game
 
 	return m_initialized;
 }
@@ -196,70 +204,8 @@ bool CThreadEvent::SmartTrace(
 {
 	if (m_dbiThreadInfo.LoadContext(reg))
 		if (m_dbgThreadInfo.UpdateContext(reg, m_dbiThreadInfo))
-		{
-			FlipSemaphore(m_dbgThreadInfo);
-			
-/*
-//when trace r0
-			KeBreak();
-			KeResetEvent(&m_dbiThreadInfo.SyncEvent);
-			KeSetEvent(&m_dbgThreadInfo.SyncEvent, MAXIMUM_PRIORITY, TRUE);
-			KeWaitForSingleObject(&m_dbiThreadInfo.SyncEvent, Executive, KernelMode, FALSE, 0);
-*/
-			return true;
-		}
+			return m_dbgThreadInfo.FlipSemaphore();//if no target-thread ready then invoke exc to the monitor-thread!
 
-	return false;
-}
-
-__checkReturn
-bool CThreadEvent::EnumMemory( 
-	__in ULONG_PTR reg[REG_COUNT] 
-	)
-{
-	CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MEMORY_ENUM));
-	MEMORY_ENUM* mem = reinterpret_cast<MEMORY_ENUM*>(auto_mem.WritePtrUser());
-	if (mem)
-	{
-		CVadNodeMemRange vad_mem;
-		//NULL is equivalent getlowerbound
-		if (m_ethread.VadScanner().GetNextVadMemoryRange(mem->Begin.Value, &vad_mem))
-		{
-			mem->Begin.Value = vad_mem.Begin();
-			mem->Size.Value = vad_mem.GetSize();
-			mem->Flags.Value = vad_mem.GetFlags().UFlags;
-		}
-
-		return true;
-	}
-
-	return false;
-}
-
-__checkReturn
-bool CThreadEvent::WatchMemoryAccess( 
-	__in ULONG_PTR reg[REG_COUNT] 
-	)
-{
-	PARAM_MEM2WATCH params;
-	if (ReadParamBuffer<PARAM_MEM2WATCH>(reg, &params))
-	{
-		//for now support just aligned watching .. in other case more processing needed ...
-		BYTE* mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(params.Memory.Value));
-		size_t size = ALIGN((params.Size.Value + ((ULONG_PTR)params.Memory.Value - (ULONG_PTR)mem2watch) + PAGE_SIZE), PAGE_SIZE);
-
-		CVadNodeMemRange vad_mem;
-		if (m_ethread.VadScanner().FindVadMemoryRange(mem2watch, &vad_mem))
-		{
-			if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags | DIRTY_FLAG)))
-			{
-				for (size_t page_walker = 0; page_walker < size; page_walker += PAGE_SIZE)
-					if (CMMU::IsAccessed(mem2watch + page_walker))
-						CMMU::SetInvalid(mem2watch + page_walker, PAGE_SIZE);
-			}
-		}
-		return true;
-	}
 	return false;
 }
 
@@ -268,7 +214,9 @@ bool DBI_THREAD_EVENT::LoadContext(
 	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	EVENT_THREAD_INFO::LoadContext(reg);
+	ProcessId = PsGetCurrentProcessId();
+	EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
+	ContextOnStack = reinterpret_cast<void*>(reg[DBI_PARAMS]);
 
 	//load to dbioutcontext var
 	CMdl r_auto_context(ContextOnStack, sizeof(DbiOutContext));
@@ -297,45 +245,11 @@ bool DBI_THREAD_EVENT::UpdateContext(
 		if (dbi_context)
 		{
 			*dbi_context = cthreadInfo.DbiOutContext;
-
-			if (dbi_context->TraceInfo.PrevEip.Value == dbi_context->TraceInfo.Eip.Value)
-				dbi_context->TraceInfo.Reason.Value = Hook;
-			else if (dbi_context->TraceInfo.PrevEip.Value == MM_LOWEST_USER_ADDRESS)
-				dbi_context->TraceInfo.Reason.Value = MemoryAcces;
-			else
-				dbi_context->TraceInfo.Reason.Value = BranchTraceFlag;
-
 			return true;
 		}
 	}
-	return true;//codecoverme.exe ohack
-	return false;
-}
-
-__checkReturn
-bool DBG_THREAD_EVENT::LoadTrapContext(
-	__in ULONG_PTR reg[REG_COUNT], 
-	__in TRACE_INFO branchInfo 
-	)
-{
-	DbiOutContext.TraceInfo = branchInfo;
-	memcpy(DbiOutContext.GeneralPurposeContext, reg, sizeof(ULONG_PTR) * REG_COUNT);
-
-	ProcessId = PsGetCurrentProcessId(); // for sure here ??
-
-	m_iret = &branchInfo.StackPtr.Value[-IRetCount];
-	ContextOnStack = &branchInfo.StackPtr.Value[-(IRetCount + REG_COUNT)];
-	EventSemaphor = &branchInfo.StackPtr.Value[-(IRetCount + REG_COUNT + 1)];
-
-	CMdl semaphore_mdl(EventSemaphor, sizeof(ULONG_PTR));//semaphore
-	ULONG_PTR* semaphore = reinterpret_cast<ULONG_PTR*>(semaphore_mdl.WritePtr());
-	if (semaphore)
-	{
-		*semaphore = 0;
-		return true;
-	}
-
 	KeBreak();
+	return true;//codecoverme.exe ohack
 	return false;
 }
 
@@ -344,16 +258,26 @@ bool DBG_THREAD_EVENT::LoadContext(
 	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	m_iret = reinterpret_cast<void*>(reg[DBI_IRET]);
-	EVENT_THREAD_INFO::LoadContext(reg);
+	//save context
+	memcpy(DbiOutContext.GeneralPurposeContext, reg, sizeof(ULONG_PTR) * REG_X64_COUNT);
 
-	CMdl reg_auto_context(ContextOnStack, sizeof(DbiOutContext.GeneralPurposeContext));
-	const void* reg_context = reg_auto_context.ReadPtr();
-	if (reg_context)
+	ProcessId = PsGetCurrentProcessId(); // for sure here ??
+
+	//usermode based offset -> ext_interface.asm responsible!!
+	IRet = &DbiOutContext.TraceInfo.StateInfo.IRet.StackPointer[-IRetCount];
+	ContextOnStack = &DbiOutContext.TraceInfo.StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT)];
+	EventSemaphor = &DbiOutContext.TraceInfo.StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
+
+	//flip semaphore to wait state!
+	CMdl semaphore_mdl(EventSemaphor, sizeof(ULONG_PTR));//semaphore
+	ULONG_PTR* semaphore = static_cast<ULONG_PTR*>(semaphore_mdl.WritePtr());
+	if (semaphore)
 	{
-		memcpy(DbiOutContext.GeneralPurposeContext, reg_context, sizeof(DbiOutContext.GeneralPurposeContext));
+		*semaphore = 0;
 		return true;
 	}
+
+	KeBreak();
 	return false;
 }
 
@@ -372,17 +296,20 @@ bool DBG_THREAD_EVENT::UpdateContext(
 		if (reg_context)
 		{
 			//not necessary copy also DBI_FLAGS, because it is unused and rewriten by IRET in trace_event case ...
-			memcpy(reg_context, cthreadInfo.DbiOutContext.GeneralPurposeContext, sizeof(DbiOutContext.GeneralPurposeContext));
+			memcpy(reg_context, cthreadInfo.DbiOutContext.GeneralPurposeContext, sizeof(ULONG_PTR) * REG_X64_COUNT);
 			
-			CMdl r_auto_context(reinterpret_cast<void*>(m_iret), IRetCount * sizeof(ULONG_PTR));
-			ULONG_PTR* iret = reinterpret_cast<ULONG_PTR*>(r_auto_context.WritePtr());
+			CMdl r_auto_context(IRet, sizeof(IRET));
+			IRET* iret = static_cast<IRET*>(r_auto_context.WritePtr());
 			if (iret)
 			{
-				iret[IReturn] = reinterpret_cast<ULONG_PTR>(cthreadInfo.DbiOutContext.TraceInfo.Eip.Value);
-				iret[ICodeSegment] = SYSCAL_CS_SEGEMENT;//obtain from HV vie vmread(CS
-				iret[IFlags] = (cthreadInfo.DbiOutContext.TraceInfo.Flags.Value);
-				iret[IRsp] = reinterpret_cast<ULONG_PTR>(cthreadInfo.DbiOutContext.TraceInfo.StackPtr.Value);
-				iret[IStackSegment] = SYSCAL_SS_SEGEMENT;//obtain from HV vie vmread(SS
+				if (!cthreadInfo.DbiOutContext.TraceInfo.Btf.Value)
+					//disable BTF : not wrmsr but instead DEBUG REGISTERS!! -> per thread!
+					//disable_branchtrace(); //-> VMX.cpp initialize vmm : vmwrite(VMX_VMCS64_GUEST_DR7, 0x400);
+					wrmsr(IA32_DEBUGCTL, ~(BTF | LBR));//disable BTF -> special handling for wrmsr in HV
+				else
+					wrmsr(IA32_DEBUGCTL, (BTF | LBR));//enable BTF -> special handling for wrmsr in HV
+
+				*iret = cthreadInfo.DbiOutContext.TraceInfo.StateInfo.IRet;				
 			}
 
 			return true;

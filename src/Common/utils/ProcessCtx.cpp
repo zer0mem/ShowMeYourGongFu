@@ -88,7 +88,7 @@ void CProcessContext<THRD, PROC, IMG>::ThreadNotifyRoutine(
 	if (!!create)
 	{
 		DbgPrint("\nTHREAD CREATED!\n");
-		thread_info.Value = new THRD(threadId, processId);
+		thread_info.Value = new THRD(threadId, processId, m_vad);
 		if (thread_info.Value)
 		{
 			if (m_threads.Push(thread_info))

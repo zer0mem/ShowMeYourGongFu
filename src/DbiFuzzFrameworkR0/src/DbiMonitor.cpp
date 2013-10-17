@@ -104,7 +104,7 @@ bool CDbiMonitor::SetVirtualizationCallbacks()
 		return false;
 
 	m_traps[VMX_EXIT_RDMSR] = (ULONG_PTR)HookProtectionMSR;
-	m_traps[VMX_EXIT_WRMSR] = (ULONG_PTR)DisableBTF;
+	m_traps[VMX_EXIT_WRMSR] = (ULONG_PTR)WrMsrSpecialBTF;
 	m_traps[VMX_EXIT_EXCEPTION] = (ULONG_PTR)TrapHandler;
 	m_traps[VMX_EXIT_DRX_MOVE] = (ULONG_PTR)AntiPatchGuard;
 	
@@ -235,7 +235,7 @@ EXTERN_C void* PageFault(
 
 	//previous mode == usermode ?
 #define USER_MODE_CS 0x1
-	if (iret->CodeSegment & USER_MODE_CS)//btf HV callback
+	if (iret->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
 	{
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
@@ -280,18 +280,19 @@ void CDbiMonitor::TrapHandler(
 			ULONG_PTR rflags = 0;
 			if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
 			{
+				if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(ins_addr)))
+				{
+					//not user mode .. in kernel dbg condition will be oposite
+					vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
+					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
+					return;//do not handle ...
+				}
+
 				if (rflags & TRAP)
 				{
-					ins_addr -= ins_len;
+					ins_addr -= ins_len;					
 
-					if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(ins_addr)))
-					{
-
-						vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-						return;
-					}
-
-					ULONG_PTR src = (ULONG_PTR)MM_LOWEST_USER_ADDRESS;
+					ULONG_PTR src = 0;
 					ULONG_PTR msr_btf_part;
 					vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part);
 					if (msr_btf_part & BTF)
@@ -303,36 +304,34 @@ void CDbiMonitor::TrapHandler(
 								src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
 								if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
 								{
+									//not user mode .. in kernel dbg condition will be oposite
 									vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
-
+									vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 									return;//do not handle ...
 								}
 								break;
 							}
+							src = 0;
 						}
 					}
-					//if just single step!
-					else
-					{
-						vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, (msr_btf_part | BTF | LBR));
-					}
 
-					CAutoTypeMalloc<TRACE_INFO>* _trace_info = m_branchInfoQueue.Pop();
+					CAutoTypeMalloc<TRACE_INFO>* _trace_info = m_branchInfoQueue.Pop();//interlocked NonPage queue
 					if (_trace_info)
 					{
 						TRACE_INFO* trace_info = _trace_info->GetMemory();
 						if (trace_info)
 						{
-							if (!vmread(VMX_VMCS64_GUEST_RSP, &trace_info->StackPtr.Value))
+							if (!vmread(VMX_VMCS64_GUEST_RSP, &trace_info->StateInfo.IRet.StackPointer))
 							{
-								trace_info->Eip.Value = reinterpret_cast<void*>(ins_addr);
+								trace_info->StateInfo.IRet.Return = reinterpret_cast<void*>(ins_addr);
 								trace_info->PrevEip.Value = reinterpret_cast<const void*>(src);
-								trace_info->Flags.Value = rflags;
+								trace_info->StateInfo.IRet.Flags = rflags;
+
 
 								//disable trap flag and let handle it by PageFault Hndlr
 								vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 								//set eip to non-exec mem for quick recognization by PageFault handler
-								vmwrite(VMX_VMCS64_GUEST_RSP, &trace_info->StackPtr.Value[-(IRetCount + REG_COUNT + 1)]);//iret(5) + popaq(0x10) + semaphore(1)
+								vmwrite(VMX_VMCS64_GUEST_RSP, &trace_info->StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)]);//iret(5) + popaq(0x10) + semaphore(1)
 								vmwrite(VMX_VMCS64_GUEST_RIP, _trace_info);
 
 								return;
@@ -342,6 +341,41 @@ void CDbiMonitor::TrapHandler(
 
 					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
 					vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
+				}
+				else
+				{
+					//detect if int3 trap
+					if (ins_len == 1)
+					{
+						ins_addr -= ins_len;
+
+						CAutoTypeMalloc<TRACE_INFO>* _trace_info = m_branchInfoQueue.Pop();//interlocked NonPage queue
+						if (_trace_info)
+						{
+							TRACE_INFO* trace_info = _trace_info->GetMemory();
+							if (trace_info)
+							{
+								if (!vmread(VMX_VMCS64_GUEST_RSP, &trace_info->StateInfo.IRet.StackPointer))
+								{
+									trace_info->StateInfo.IRet.Return = reinterpret_cast<void*>(ins_addr);
+									trace_info->PrevEip.Value = 0;
+									trace_info->StateInfo.IRet.Flags = rflags;
+
+
+									//disable trap flag and let handle it by PageFault Hndlr
+									vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
+									//set eip to non-exec mem for quick recognization by PageFault handler
+									vmwrite(VMX_VMCS64_GUEST_RSP, &trace_info->StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)]);//iret(5) + popaq(0x10) + semaphore(1)
+									vmwrite(VMX_VMCS64_GUEST_RIP, _trace_info);
+
+									return;
+								}
+							}						
+						}
+					}
+
+
+
 				}
 
 			}
@@ -364,7 +398,7 @@ EXTERN_C void* RdmsrHook(
 
 	KeBreak();
 	CDbiMonitor::InstallPageFaultHooks();
-	CDbiMonitor::DisablePatchGuard(0);
+	CDbiMonitor::DisablePatchGuard(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
 
 	//wait4rever : keinitilizeevent + kesetevent + kewaitforsingle object .. freeze this thread ;)
 
@@ -378,7 +412,7 @@ EXTERN_C void* RdmsrHook(
 // ****************** HYPERVISOR CALLBACKS ******************
 //-----------------------------------------------------------
 
-void CDbiMonitor::DisableBTF( 
+void CDbiMonitor::WrMsrSpecialBTF( 
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
@@ -514,6 +548,9 @@ void CDbiMonitor::InstallPageFaultHooks()
 
 void CDbiMonitor::DisablePatchGuard( __in BYTE coreId )
 {
-	KeInitializeEvent(&m_patchGuardEvents[coreId], NotificationEvent, FALSE);
-	KeWaitForSingleObject(&m_patchGuardEvents[coreId], Executive, KernelMode, FALSE, 0);
+	if (coreId < _countof(m_patchGuardEvents))
+	{
+		KeInitializeEvent(&m_patchGuardEvents[coreId], NotificationEvent, FALSE);
+		KeWaitForSingleObject(&m_patchGuardEvents[coreId], Executive, KernelMode, FALSE, 0);
+	}
 }

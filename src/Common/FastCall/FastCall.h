@@ -21,9 +21,9 @@ enum
 	SYSCALL_ENUM_MODULES,
 	SYSCALL_ENUM_MEMORY,
 
-	SYSCALL_WATCH_MEMORY,
+	SYSCALL_SET_MEMORY_BP,
 	SYSCALL_GETPROCADDR,
-	SYSCALL_SET_HOOK,
+	SYSCALL_SET_ADDRESS_BP,
 
 	SYSCALL_INIT,
 };
@@ -61,20 +61,11 @@ enum EnumSYSENTER
 	SFlags = R11
 };
 
-enum EnumIRET
-{
-	IReturn = 0,
-	ICodeSegment,
-	IFlags,
-	IRsp,
-	IStackSegment,
-	IRetCount
-};
 
 enum EnumTraceReason
 {
 	BranchTraceFlag = 0,
-	TraceFlag,
+	SingleTraceFlag,
 	Hook,
 	MemoryAcces
 };
@@ -93,17 +84,15 @@ struct TYPE_X86COMPATIBLE
 
 struct TRACE_INFO 
 {
-	TYPE_X86COMPATIBLE<void*> Eip;
+	PFIRET StateInfo;
+	TYPE_X86COMPATIBLE<BYTE> Btf;
 	TYPE_X86COMPATIBLE<const void*> PrevEip;
-	TYPE_X86COMPATIBLE<ULONG_PTR*> StackPtr;
-	TYPE_X86COMPATIBLE<ULONG64> Flags;
-	TYPE_X86COMPATIBLE<ULONG64> Reason;
+	TYPE_X86COMPATIBLE<ULONG_PTR> Reason;
 };
 
 struct MEMORY_ACCESS
 {
 	TYPE_X86COMPATIBLE<const void*> Memory;
-	TYPE_X86COMPATIBLE<ERROR_CODE> Access;
 	TYPE_X86COMPATIBLE<const void*> Begin;
 	TYPE_X86COMPATIBLE<size_t> Size;
 	TYPE_X86COMPATIBLE<ULONG> Flags;

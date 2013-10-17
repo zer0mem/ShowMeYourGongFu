@@ -79,15 +79,9 @@ public:
 
 class CVadScanner
 {
-public:
+public:	
 	CVadScanner(
-		__in PETHREAD ethread
-		);
-
-	CVadScanner();
-
-	void Init(
-		__in PETHREAD ethread
+		__in PEPROCESS process
 		);
 
 	__checkReturn 

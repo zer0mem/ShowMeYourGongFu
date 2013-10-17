@@ -13,7 +13,7 @@
 
 enum
 {
-	ExtTrapTrace,
+	ExtWaitForDbiEvent,
 	ExtInfo,
 	ExtHook,
 	ExtCount

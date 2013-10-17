@@ -95,10 +95,8 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 	{
-		if (fuzz_thread->IsMemory2Watch(memory, size))
-		{
+		if (m_mem2watch.Find(CMemoryRange(static_cast<BYTE*>(memory), size)))
 			CMMU::SetValid(memory, size);
-		}
 	}
 
 	return false;
@@ -117,163 +115,97 @@ bool CProcess2Fuzz::PageFault(
 	)
 {
 	ResolveThreads();
-	PFIRET* iret = PPAGE_FAULT_IRET(reg);
+	PFIRET* pf_iret = PPAGE_FAULT_IRET(reg);
 	
 	if (PsGetCurrentProcessId() == m_processId)
 	{
 		CThreadEvent* fuzz_thread;
 		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
-			/*
-			// { ************************** INSTAL EP HOOK, freeze app at the begining - w8 for r3tracer ************************** 
-			if (!m_installed && m_mainImg && m_extRoutines[ExtHook])
-			{
-				void* hook = m_mainImg->Image().IsInRange(iret->Return) ? const_cast<void*>(iret->Return) : reinterpret_cast<void*>((ULONG_PTR)m_mainImg->Image().Begin() + m_mainImg->EntryPoint());
-				m_installed = m_mainImg->SetUpNewRelHook(hook, m_extRoutines[ExtHook]);
+			//TODO : if no monitor-thread paired then just freeze this thread!!
 
-				//this test + ret true; is probably not necessary ...
-				if (m_installed && m_mainImg->Image().IsInRange(iret->Return))
-					return true;
-			}
-			// } ************************** INSTAL EP HOOK ************************** 
-			*/
 			// { ************************** HANDLE HV TRAP EXIT ************************** 
-			if (iret->Return == faultAddr)
+			if (faultAddr == pf_iret->IRet.Return)
 			{
-				//if (fuzz_thread->GetStack().IsInRange(reinterpret_cast<const ULONG_PTR*>(iret->Return)))
-				if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(iret->Return))
+				//if rip potentionaly points to kernel mode
+				if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(pf_iret->IRet.Return))
 				{
-					//if (iret->Return == branchInfo->StackPtr.Value)
-					const CAutoTypeMalloc<TRACE_INFO>* trace_info = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(iret->Return);
-					if (fuzz_thread->GetStack().IsInRange(trace_info->GetMemory()->StackPtr.Value))
+					//try except blog ? -> indeed use this address as ptr to kernel struct-> 
+					//TODO : check if it is really our kernel object !!!!!
+					const CAutoTypeMalloc<TRACE_INFO>* trace_info = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(pf_iret->IRet.Return);
+					if (fuzz_thread->GetStack().IsInRange(trace_info->GetMemory()->StateInfo.IRet.StackPointer))
 					{
-						DbiTraceEvent(reg, trace_info->GetMemory());//!!!!!!!!!!!!! ??
+						fuzz_thread->SmartTraceEvent(reg, trace_info->GetMemory(), pf_iret);
 
 						//push back to trace_info queue
 						CDbiMonitor::m_branchInfoQueue.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info));
 						//handle branch tracing - callback from HV
-						iret->Return = m_extRoutines[ExtTrapTrace];
+						pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
 
 						return true;
 					}
 				}
+				/*
+				else if (static_cast<void*>(0) == faultAddr)
+				{
+					CImage* img;
+					if (GetImage(pf_iret->IRet.Return, &img))
+					{
+						if (img->IsHooked(pf_iret->IRet.Return))
+						{
+							pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
+							return true;
+						}
+					}
+				}
+				*/
 			}
 			// } ************************** HANDLE HV TRAP EXIT ************************** 
-		}
-	}
 
-// { ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
-	if (PsGetCurrentProcessId() == m_processId)
-	{
-		CThreadEvent* fuzz_thread;
-		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
-		{
+			// { ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 			CMemoryRange* mem;
-			if (fuzz_thread->GetMemory2Watch(faultAddr, sizeof(ULONG_PTR), &mem))
+			if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem))//bullshit, what if another thread raise to this point ??
 			{
-				if (mem->MatchFlags(DIRTY_FLAG))
+				fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret);
+
+				if (CMMU::IsAccessed(faultAddr))
 				{
-					mem->SetFlags(mem->GetFlags() & ~DIRTY_FLAG);
+					CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));//invalidate it again by user-tracer calling setmembp ...
 
-					//disable BTF : not wrmsr but instead DEBUG REGISTERS!! -> per thread!
-					//disable_branchtrace(); //-> VMX.cpp initialize vmm : vmwrite(VMX_VMCS64_GUEST_DR7, 0x400);
-					wrmsr(IA32_DEBUGCTL, ~(BTF | LBR));//disable BTF -> special handling for wrmsr in HV
-					iret->Flags |= TRAP; 
+					pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
 
-					CThreadEvent* fuzz_thread;
-					if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
-						//temporary this set also as valid ... 
-						fuzz_thread->RegisterMemoryAccess(faultAddr, iret->ErrorCode, mem->Begin(), mem->GetSize(), mem->GetFlags());
-
-					if (CMMU::IsAccessed(faultAddr))
-					{
-						CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));
-						return true;
-					}
+					return true;
 				}
-			}
 
+			}
+			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 		}
 	}
-// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
-
 	return false;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////
+///							TRACER - tracing
+/////////////////////////////////////////////////////////////////////////////////////
+
 __checkReturn
-bool CProcess2Fuzz::DbiHook( 
+bool CProcess2Fuzz::DbiInit( 
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
 	CThreadEvent* fuzz_thread;
-	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
+	if (GetFuzzThread((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], &fuzz_thread))
 	{
-		CImage* img;
-		if (GetImage(reinterpret_cast<void*>(reg[DBI_RETURN]), &img))
-			return fuzz_thread->HookEvent(img, reg);
+		CEProcess eprocess(m_processId);
+		CAutoEProcessAttach attach(eprocess);
+		if (eprocess.IsAttached())
+			return fuzz_thread->Init(reg);
 	}
 
 	return false;
 }
 
-__checkReturn
-bool CProcess2Fuzz::DbiTraceEvent( 
-	__inout ULONG_PTR reg[REG_COUNT],
-	__in TRACE_INFO* branchInfo
-	)
-{
-	CThreadEvent* fuzz_thread;
-	if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
-	{
-		//handle BTF - steping trough bblocks
-		if (branchInfo->PrevEip.Value != MM_LOWEST_USER_ADDRESS)
-		{
-			CImage* dst_img;
-			if (GetImage(branchInfo->Eip.Value, &dst_img))
-			{
-				//is system logic should be moved to user mode r3 tracer ...
-				if (dst_img->IsSystem())
-				{
-					void* ret;
-					{//obtain ret from stack -> because jmp to another module must fallback .. - potential point of fail, too much prediction :P
-						CMdl ret_mdl(branchInfo->StackPtr.Value, sizeof(void*));
-						void* _ret = const_cast<void*>(ret_mdl.ReadPtrUser());
-						ret = _ret ? *reinterpret_cast<ULONG_PTR**>(_ret) : NULL;
-					}
-					CImage* target_img;
-					if (GetImage(ret, &target_img))
-					{
-						target_img->SetUpNewRelHook(ret, m_extRoutines[ExtHook]);
-						branchInfo->Flags.Value &= (~TRAP);
-						DbgPrint("-----------> %p %p %p", branchInfo->Eip.Value, branchInfo->PrevEip.Value, ret);
-					}
-				}
-			}
-		}
-		//else handle MEMORY ACCESS violation, which cause from page fault single step TRAP
-		else
-		{
-			CMemoryRange* mem;
-			if (fuzz_thread->GetMemory2Watch(fuzz_thread->GetMemoryAccess().Memory.Value, sizeof(ULONG_PTR), &mem) &&
-				!mem->MatchFlags(DIRTY_FLAG))
-			{
-				mem->SetFlags(mem->GetFlags() | DIRTY_FLAG);
-				CMMU::SetInvalid(fuzz_thread->GetMemoryAccess().Memory.Value, sizeof(ULONG_PTR));
-			}
-			//else single step is invoked, necessary to add handling ...
-		}
-
-		return fuzz_thread->SmartTraceEvent(reg, *branchInfo);
-	}
-	
-	return false;
-}
-
-//------------------------------------------------------------
-// ****************** DBI MONITOR CALLBACKS ******************
-//------------------------------------------------------------
-
-__checkReturn
+	__checkReturn
 bool CProcess2Fuzz::DbiRemoteTrace( 
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
@@ -284,6 +216,63 @@ bool CProcess2Fuzz::DbiRemoteTrace(
 
 	return false;
 }
+
+/////////////////////////////////////////////////////////////////////////////////////
+///							TRACER CALLBACKS - HOOKS
+/////////////////////////////////////////////////////////////////////////////////////
+
+__checkReturn
+bool CProcess2Fuzz::DbiSetAddressBreakpoint( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	PARAM_HOOK params;
+	if (ReadParamBuffer<PARAM_HOOK>(reg, &params))
+	{
+		CImage* img;
+		if (GetImage(params.HookAddr.Value, &img))
+		{
+			CEProcess eprocess(m_processId);
+			CAutoEProcessAttach attach(eprocess);
+			if (eprocess.IsAttached())
+			{
+				return img->SetUpNewRelHook(params.HookAddr.Value, m_extRoutines[ExtHook]);
+			}
+		}
+	}
+	return false;
+}
+
+__checkReturn
+bool CProcess2Fuzz::DbiSetMemoryBreakpoint( 
+	__inout ULONG_PTR reg[REG_COUNT] 
+	)
+{
+	PARAM_MEM2WATCH params;
+	if (ReadParamBuffer<PARAM_MEM2WATCH>(reg, &params))
+	{
+		//for now support just aligned watching .. in other case more processing needed ...
+		BYTE* mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(params.Memory.Value));
+		size_t size = ALIGN((params.Size.Value + ((ULONG_PTR)params.Memory.Value - (ULONG_PTR)mem2watch) + PAGE_SIZE), PAGE_SIZE);
+
+		CVadNodeMemRange vad_mem;
+		if (m_vad.FindVadMemoryRange(mem2watch, &vad_mem))
+		{
+			if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags | DIRTY_FLAG)))
+			{
+				for (size_t page_walker = 0; page_walker < size; page_walker += PAGE_SIZE)
+					if (CMMU::IsAccessed(mem2watch + page_walker))
+						CMMU::SetInvalid(mem2watch + page_walker, PAGE_SIZE);
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////
+///							THREADS WALKER
+/////////////////////////////////////////////////////////////////////////////////////
 
 __checkReturn
 bool CProcess2Fuzz::DbiEnumThreads( 
@@ -311,46 +300,6 @@ bool CProcess2Fuzz::DbiEnumThreads(
 	return false;
 }
 
-__checkReturn
-bool CProcess2Fuzz::DbiEnumMemory( 
-	__inout ULONG_PTR reg[REG_COUNT]
-	)
-{
-	CThreadEvent* fuzz_thread;
-	if (GetFuzzThread((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], &fuzz_thread))
-		return fuzz_thread->EnumMemory(reg);	
-	return false;
-}
-
-__checkReturn
-bool CProcess2Fuzz::DbiWatchMemoryAccess( 
-	__inout ULONG_PTR reg[REG_COUNT] 
-	)
-{
-	CThreadEvent* fuzz_thread;
-	if (GetFuzzThread((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], &fuzz_thread))
-		return fuzz_thread->WatchMemoryAccess(reg);
-
-	return false;
-}
-
-__checkReturn
-bool CProcess2Fuzz::DbiInit( 
-	__inout ULONG_PTR reg[REG_COUNT] 
-	)
-{
-	CThreadEvent* fuzz_thread;
-	if (GetFuzzThread((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], &fuzz_thread))
-	{
-		CEProcess eprocess(m_processId);
-		CAutoEProcessAttach attach(eprocess);
-		if (eprocess.IsAttached())
-			return fuzz_thread->Init(reg);
-	}
-
-	return false;
-}
-
 NTSYSAPI 
 NTSTATUS 
 NTAPI 
@@ -372,6 +321,10 @@ bool CProcess2Fuzz::DbiSuspendThread(
 	return false;
 	*/
 }
+
+/////////////////////////////////////////////////////////////////////////////////////
+///							MODULE MONITOR
+/////////////////////////////////////////////////////////////////////////////////////
 
 __checkReturn
 bool CProcess2Fuzz::DbiEnumModules( 
@@ -427,6 +380,32 @@ bool CProcess2Fuzz::DbiGetProcAddress(
 	return false;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////
+///							MEMORY DUMPER
+/////////////////////////////////////////////////////////////////////////////////////
+__checkReturn
+bool CProcess2Fuzz::DbiEnumMemory( 
+	__inout ULONG_PTR reg[REG_COUNT]
+	)
+{
+	CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MEMORY_ENUM));
+	MEMORY_ENUM* mem = reinterpret_cast<MEMORY_ENUM*>(auto_mem.WritePtrUser());
+	if (mem)
+	{
+		CVadNodeMemRange vad_mem;
+		//NULL is equivalent getlowerbound
+		if (m_vad.GetNextVadMemoryRange(mem->Begin.Value, &vad_mem))
+		{
+			mem->Begin.Value = vad_mem.Begin();
+			mem->Size.Value = vad_mem.GetSize();
+			mem->Flags.Value = vad_mem.GetFlags().UFlags;
+		}
+
+		return true;
+	}
+	return false;
+}
+
 __checkReturn
 bool CProcess2Fuzz::DbiDumpMemory( 
 	__inout ULONG_PTR reg[REG_COUNT] 
@@ -444,7 +423,7 @@ bool CProcess2Fuzz::DbiDumpMemory(
 			if (eprocess.IsAttached())
 			{
 				CMdl mdl_mntr(params.Src.Value, params.Size.Value);
-				const void* src = mdl_mntr.ReadPtr();
+				const void* src = mdl_mntr.ReadPtrUser();
 				if (src)
 				{
 					memcpy(dst, src, params.Size.Value);
@@ -474,34 +453,12 @@ bool CProcess2Fuzz::DbiPatchMemory(
 			{
 				KeBreak();
 				CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
-				void* dst = mdl_dbg.WritePtr();
+				void* dst = mdl_dbg.WritePtrUser();
 				if (dst)
 				{
 					memcpy(dst, src, params.Size.Value);
 					return true;
 				}
-			}
-		}
-	}
-	return false;
-}
-
-__checkReturn
-bool CProcess2Fuzz::DbiSetHook( 
-	__inout ULONG_PTR reg[REG_COUNT] 
-	)
-{
-	PARAM_HOOK params;
-	if (ReadParamBuffer<PARAM_HOOK>(reg, &params))
-	{
-		CImage* img;
-		if (GetImage(params.HookAddr.Value, &img))
-		{
-			CEProcess eprocess(m_processId);
-			CAutoEProcessAttach attach(eprocess);
-			if (eprocess.IsAttached())
-			{
-				return img->SetUpNewRelHook(params.HookAddr.Value, m_extRoutines[ExtHook]);
 			}
 		}
 	}
@@ -524,17 +481,15 @@ bool CProcess2Fuzz::Syscall(
 	bool status = false;
 	switch ((ULONG)reg[RAX])//DBI_ACTION
 	{
-	case 0x666:
-		KeBreak();
-
-		break;
-	case SYSCALL_HOOK:
-		if (m_processId == PsGetCurrentProcessId())
-			status = DbiHook(reg);
+//tracer
+	case SYSCALL_INIT:
+		if (m_processId != PsGetCurrentProcessId())
+			status = DbiInit(reg);
 		else//ERROR
 			KeBreak();
 
 		break;
+
 	case SYSCALL_TRACE_FLAG:
 		if (m_processId == PsGetCurrentProcessId())//ERROR
 			KeBreak();
@@ -542,6 +497,25 @@ bool CProcess2Fuzz::Syscall(
 			status = DbiRemoteTrace(reg);
 
 		break;
+
+//'hooks' - tracer callbacks
+	case SYSCALL_SET_MEMORY_BP:
+		if (m_processId != PsGetCurrentProcessId())
+			status = DbiSetMemoryBreakpoint(reg);
+		else//ERROR
+			KeBreak();
+
+		break;
+
+	case SYSCALL_SET_ADDRESS_BP:
+		if (m_processId != PsGetCurrentProcessId())
+			status = DbiSetAddressBreakpoint(reg);
+		else//ERROR
+			KeBreak();
+
+		break;
+
+//threads walker
 	case SYSCALL_ENUM_THREAD:
 		if (m_processId != PsGetCurrentProcessId())
 			status = DbiEnumThreads(reg);
@@ -550,9 +524,27 @@ bool CProcess2Fuzz::Syscall(
 
 		break;
 
-	case SYSCALL_INIT:
+//module monitor
+	case SYSCALL_ENUM_MODULES:
 		if (m_processId != PsGetCurrentProcessId())
-			status = DbiInit(reg);
+			status = DbiEnumModules(reg);
+		else//ERROR
+			KeBreak();
+
+		break;
+
+	case SYSCALL_GETPROCADDR:
+		if (m_processId != PsGetCurrentProcessId())
+			status = DbiGetProcAddress(reg);
+		else//ERROR
+			KeBreak();
+
+		break;
+
+//memory dumper
+	case SYSCALL_ENUM_MEMORY:
+		if (m_processId != PsGetCurrentProcessId())
+			status = DbiEnumMemory(reg);
 		else//ERROR
 			KeBreak();
 
@@ -569,46 +561,6 @@ bool CProcess2Fuzz::Syscall(
 	case SYSCALL_DUMP_MEMORY:
 		if (m_processId != PsGetCurrentProcessId())
 			status = DbiDumpMemory(reg);
-		else//ERROR
-			KeBreak();
-
-		break;
-
-	case SYSCALL_ENUM_MODULES:
-		if (m_processId != PsGetCurrentProcessId())
-			status = DbiEnumModules(reg);
-		else//ERROR
-			KeBreak();
-
-		break;
-
-	case SYSCALL_ENUM_MEMORY:
-		if (m_processId != PsGetCurrentProcessId())
-			status = DbiEnumMemory(reg);
-		else//ERROR
-			KeBreak();
-
-		break;
-
-	case SYSCALL_WATCH_MEMORY:
-		if (m_processId != PsGetCurrentProcessId())
-			status = DbiWatchMemoryAccess(reg);
-		else//ERROR
-			KeBreak();
-
-		break;
-
-	case SYSCALL_GETPROCADDR:
-		if (m_processId != PsGetCurrentProcessId())
-			status = DbiGetProcAddress(reg);
-		else//ERROR
-			KeBreak();
-
-		break;
-
-	case SYSCALL_SET_HOOK:
-		if (m_processId != PsGetCurrentProcessId())
-			status = DbiSetHook(reg);
 		else//ERROR
 			KeBreak();
 
@@ -653,5 +605,18 @@ void CProcess2Fuzz::ResolveThreads()
 
 			} while(m_unresolvedThreads.GetNext(*thread_id, &thread_id));
 		}
+	}
+}
+
+CProcess2Fuzz::~CProcess2Fuzz()
+{
+	CMemoryRange* mem = NULL;
+	m_mem2watch.Find(CMemoryRange(NULL, 1), &mem);
+	if (mem)
+	{
+		do
+		{
+			CMMU::SetValid(mem->Begin(), mem->GetSize());
+		} while(m_mem2watch.GetNext(*mem, &mem));
 	}
 }

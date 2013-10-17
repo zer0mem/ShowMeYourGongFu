@@ -20,7 +20,7 @@ public:
 
 	CColdPatch(
 		__in void* addrToHook,
-		__in_bcount(size) const BYTE* hook
+		__in_bcount(size) const void* hook
 		)
 	{
 		if (CMMU::IsValid(addrToHook))
@@ -121,17 +121,29 @@ struct FARCALLHOOK
 	}
 };
 
-class CFarCallHook
+/*
+	jmp rsp ; 0xe4ff [0xff 0xe4]
+*/
+#define INT3HOOK_SIZE sizeof(BYTE)
+
+struct INT3HOOK
+{
+	BYTE Buffer[INT3HOOK_SIZE];
+
+	INT3HOOK()
+	{
+		Buffer[0] = 0xCC;
+	}
+};
+
+class CINT3Hook
 {
 public:
-	CFarCallHook(
-		__in void* addrToHook,
-		__in const void* addrOfHook
-		) : m_farCallHook(addrOfHook),
-			m_coldPatch(addrToHook, m_farCallHook.Buffer)
+	CINT3Hook(
+		__in void* addrToHook
+		) : m_coldPatch(addrToHook, &m_hook.Buffer)
 	{
 	}
-
 	__checkReturn
 	bool IsHooked()
 	{
@@ -142,10 +154,37 @@ public:
 	{
 		return m_coldPatch.AddrToHook();
 	}
+protected:
+	INT3HOOK m_hook;
+	CColdPatch<INT3HOOK_SIZE> m_coldPatch;
+};
 
-private:
-	FARCALLHOOK m_farCallHook;
+class CFarCallHook
+{
+	CFarCallHook(
+		__in void* addrToHook,
+		__in const void* addrOfHook
+		) : m_hook(addrOfHook),
+			m_coldPatch(addrToHook, &m_hook.Buffer)
+	{
+	}
+protected:
+	FARCALLHOOK m_hook;
 	CColdPatch<FARCALLHOOK_SIZE> m_coldPatch;
+};
+
+class CRelCallHook
+{
+	CRelCallHook(
+		__in void* addrToHook,
+		__in const void* addrOfHook
+		) : m_hook(addrToHook, addrOfHook),
+			m_coldPatch(addrToHook, &m_hook.Buffer)
+	{
+	}
+protected:
+	RELCALLHOOK m_hook;
+	CColdPatch<SIZE_REL_CALL> m_coldPatch;
 };
 
 #endif //__COLDPATCHER_H__

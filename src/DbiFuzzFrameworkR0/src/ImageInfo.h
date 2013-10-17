@@ -16,7 +16,7 @@
 #include "../../Common/utils/ColdPatcher.hpp"
 #include "../../Common/utils/Range.h"
 
-typedef COMPARABLE_ID_PTR<void*, CFarCallHook> RELLCALLHOOK_ID;
+typedef COMPARABLE_ID_PTR<void*, CINT3Hook> RELLCALLHOOK_ID;
 
 class CImage :
 	public LOADED_IMAGE

@@ -107,7 +107,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalOptions>/EXPORT:ExtTrapTrace /EXPORT:ExtHook %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/EXPORT:ExtTrapTrace %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">

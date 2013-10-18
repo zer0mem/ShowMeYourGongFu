@@ -78,7 +78,7 @@ struct DBI_THREAD_EVENT :
 	bool UpdateContext(
 		__in ULONG_PTR reg[REG_COUNT],
 		__in const EVENT_THREAD_INFO& cthreadInfo
-		) override;
+		);
 };
 
 struct DBG_THREAD_EVENT :
@@ -115,12 +115,13 @@ struct DBG_THREAD_EVENT :
 	bool UpdateContext(
 		__in ULONG_PTR reg[REG_COUNT],
 		__in const EVENT_THREAD_INFO& cthreadInfo
-		) override;
+		);
 
 	void* IRet;
 
 protected:
 	__checkReturn
+	virtual
 	bool LoadContext(
 		__in ULONG_PTR reg[REG_COUNT]
 	);
@@ -146,7 +147,7 @@ public:
 
 	void SmartTraceEvent( 
 		__in ULONG_PTR reg[REG_COUNT], 
-		__in const TRACE_INFO* branchInfo, 
+		__in const TRACE_INFO* branchInfo,
 		__in const PFIRET* pfIRet 
 		);
 

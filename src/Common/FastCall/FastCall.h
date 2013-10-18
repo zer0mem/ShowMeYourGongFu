@@ -31,23 +31,14 @@ enum
 enum
 {
 //per reg INFO
-	DBI_ACTION = RAX,
+	SYSCALL_ID = RAX,
+	DBI_SYSCALL = RBX,
 
-	//DBI_IOCALL = RCX, //x86 compatibility ...
-	DBI_IOCALL = R8, //x64 compatibility ...
+	//DBI_SEMAPHORE = RCX, -> semapthore is on IRET->StackPtr, in other word first ptr on stack is semaphore
+	DBI_FUZZAPP_PROC_ID = RDX,
 
-	DBI_R3TELEPORT = RDI,
-
-	DBI_SEMAPHORE = RBX,
-
-	DBI_FUZZAPP_PROC_ID = RBP, //monitor
-	DBI_IRET = RBP, //target
-
-	DBI_FUZZAPP_THREAD_ID = RSI, //monitor
-	DBI_RETURN = RSI, //target
-
-//optional parameter!
-	DBI_PARAMS = RDX,
+	DBI_FUZZAPP_THREAD_ID = R8, 
+	DBI_PARAMS = R9,
 };
 
 #define DBI_FLAGS REG_COUNT
@@ -60,7 +51,6 @@ enum EnumSYSENTER
 	SReturn = RCX,
 	SFlags = R11
 };
-
 
 enum EnumTraceReason
 {

@@ -74,6 +74,8 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 			const void* func_name;
 			for (size_t i = 0; (func_name = CConstants::InAppExtRoutines(i)); i++)
 				m_extRoutines[i] = pe.GetProcAddress(func_name);
+
+			DbgPrint("\n#######################################\n# CODECOVERME.EXE ID %p\n#######################################", PsGetCurrentProcessId());
 		}
 	}
 }
@@ -137,6 +139,18 @@ bool CProcess2Fuzz::PageFault(
 					{
 						fuzz_thread->SmartTraceEvent(reg, trace_info->GetMemory(), pf_iret);
 
+						//TEST INT3 system of hooks
+						if (!(trace_info->GetMemory()->StateInfo.IRet.Flags & TRAP))
+						{
+							CImage* img;
+							GetImage(trace_info->GetMemory()->StateInfo.IRet.Return, &img);
+							if (img->IsHooked(trace_info->GetMemory()->StateInfo.IRet.Return))
+								DbgPrint("\nunhooking processing\n");
+							else
+								DbgPrint("\nunhooking failed\n");
+							img->UninstallHook(trace_info->GetMemory()->StateInfo.IRet.Return);
+						}
+
 						//push back to trace_info queue
 						CDbiMonitor::m_branchInfoQueue.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info));
 						//handle branch tracing - callback from HV
@@ -145,20 +159,6 @@ bool CProcess2Fuzz::PageFault(
 						return true;
 					}
 				}
-				/*
-				else if (static_cast<void*>(0) == faultAddr)
-				{
-					CImage* img;
-					if (GetImage(pf_iret->IRet.Return, &img))
-					{
-						if (img->IsHooked(pf_iret->IRet.Return))
-						{
-							pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
-							return true;
-						}
-					}
-				}
-				*/
 			}
 			// } ************************** HANDLE HV TRAP EXIT ************************** 
 
@@ -280,7 +280,7 @@ bool CProcess2Fuzz::DbiEnumThreads(
 	)
 {
 	CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(CID_ENUM));
-	CID_ENUM* cid = reinterpret_cast<CID_ENUM*>(auto_cid.WritePtrUser());
+	CID_ENUM* cid = static_cast<CID_ENUM*>(auto_cid.WritePtrUser());
 	if (cid)
 	{
 		THREAD* thread = NULL;
@@ -332,7 +332,7 @@ bool CProcess2Fuzz::DbiEnumModules(
 	)
 {
 	CMdl auto_module(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MODULE_ENUM));
-	MODULE_ENUM* module = reinterpret_cast<MODULE_ENUM*>(auto_module.WritePtrUser());
+	MODULE_ENUM* module = static_cast<MODULE_ENUM*>(auto_module.WritePtrUser());
 	if (module)
 	{
 		IMAGE* img = NULL;
@@ -362,7 +362,7 @@ bool CProcess2Fuzz::DbiGetProcAddress(
 	)
 {
 	CMdl auto_api_param(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(PARAM_API));
-	PARAM_API* api_param = reinterpret_cast<PARAM_API*>(auto_api_param.WritePtr());
+	PARAM_API* api_param = static_cast<PARAM_API*>(auto_api_param.WritePtr());
 	if (api_param)
 	{
 		CImage* img;
@@ -389,7 +389,7 @@ bool CProcess2Fuzz::DbiEnumMemory(
 	)
 {
 	CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MEMORY_ENUM));
-	MEMORY_ENUM* mem = reinterpret_cast<MEMORY_ENUM*>(auto_mem.WritePtrUser());
+	MEMORY_ENUM* mem = static_cast<MEMORY_ENUM*>(auto_mem.WritePtrUser());
 	if (mem)
 	{
 		CVadNodeMemRange vad_mem;
@@ -479,7 +479,7 @@ bool CProcess2Fuzz::Syscall(
 	reg[RSP] = (ULONG_PTR)(get_ring3_rsp() - 2);
 
 	bool status = false;
-	switch ((ULONG)reg[RAX])//DBI_ACTION
+	switch ((ULONG)reg[SYSCALL_ID])//DBI_ACTION
 	{
 //tracer
 	case SYSCALL_INIT:

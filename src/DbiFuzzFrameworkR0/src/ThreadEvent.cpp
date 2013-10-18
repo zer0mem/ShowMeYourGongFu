@@ -61,11 +61,9 @@ bool EVENT_THREAD_INFO::FlipSemaphore()
 		if (eprocess.IsAttached())
 		{
 			CMdl event_semaphor(EventSemaphor, sizeof(BYTE));
-			volatile CHAR* semaphor = reinterpret_cast<volatile CHAR*>(event_semaphor.WritePtr());
+			volatile CHAR* semaphor = static_cast<volatile CHAR*>(event_semaphor.WritePtr());
 			if (semaphor)
-			{
 				return (0 == InterlockedExchange8(semaphor, 1));
-			}
 		}
 	}
 	return false;
@@ -110,7 +108,7 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 		CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));
 
 		CMdl mdl(faultAddr, sizeof(ULONG_PTR));
-		const ULONG_PTR* val = reinterpret_cast<const ULONG_PTR*>(mdl.ReadPtr());
+		const ULONG_PTR* val = static_cast<const ULONG_PTR*>(mdl.ReadPtr());
 		if (val)
 			DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
 
@@ -169,11 +167,12 @@ bool DBG_THREAD_EVENT::LoadTrapContext(
 	DbiOutContext.TraceInfo.StateInfo.IRet.CodeSegment = pfIRet->IRet.CodeSegment;
 	DbiOutContext.TraceInfo.StateInfo.IRet.StackSegment = pfIRet->IRet.StackSegment;
 
-	if (DbiOutContext.TraceInfo.StateInfo.IRet.Flags & TRAP)
+	if (branchInfo->StateInfo.IRet.Flags & TRAP)
 		DbiOutContext.TraceInfo.Reason.Value = branchInfo->PrevEip.Value ? BranchTraceFlag : SingleTraceFlag;
 	else
 	{
 		KeBreak();
+		DbgPrint("\n--------------------------------------\n## DBG_THREAD_EVENT::LoadTrapContext HOOK!!\n----------------------------------------\n");
 		DbiOutContext.TraceInfo.Reason.Value = Hook;
 	}
 
@@ -211,16 +210,17 @@ bool CThreadEvent::SmartTrace(
 
 __checkReturn
 bool DBI_THREAD_EVENT::LoadContext( 
-	__in ULONG_PTR reg[REG_COUNT]
+	__in ULONG_PTR reg[REG_COUNT] 
 	)
 {
 	ProcessId = PsGetCurrentProcessId();
-	EventSemaphor = reinterpret_cast<void*>(reg[DBI_SEMAPHORE]);
+	//semaphore should be on the top of the stack!
+	EventSemaphor = reinterpret_cast<void *>(HOOK_ORIG_RSP(reg));
 	ContextOnStack = reinterpret_cast<void*>(reg[DBI_PARAMS]);
 
 	//load to dbioutcontext var
 	CMdl r_auto_context(ContextOnStack, sizeof(DbiOutContext));
-	const DBI_OUT_CONTEXT* dbi_out_context = reinterpret_cast<const DBI_OUT_CONTEXT*>(r_auto_context.ReadPtrUser());
+	const DBI_OUT_CONTEXT* dbi_out_context = static_cast<const DBI_OUT_CONTEXT*>(r_auto_context.ReadPtrUser());
 	if (dbi_out_context)
 	{
 		DbiOutContext = *dbi_out_context;
@@ -241,7 +241,7 @@ bool DBI_THREAD_EVENT::UpdateContext(
 	if (eprocess.IsAttached())
 	{
 		CMdl dbi_auto_context(ContextOnStack, sizeof(cthreadInfo.DbiOutContext));
-		DBI_OUT_CONTEXT* dbi_context = reinterpret_cast<DBI_OUT_CONTEXT*>(dbi_auto_context.WritePtrUser());
+		DBI_OUT_CONTEXT* dbi_context = static_cast<DBI_OUT_CONTEXT*>(dbi_auto_context.WritePtrUser());
 		if (dbi_context)
 		{
 			*dbi_context = cthreadInfo.DbiOutContext;

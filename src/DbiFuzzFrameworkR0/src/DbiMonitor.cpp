@@ -206,7 +206,8 @@ EXTERN_C void* SysCallCallback(
 	}
 	else
 	{
-		if (FAST_CALL == reg[DBI_IOCALL] && (ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
+		//handle tracer fast-calls
+		if (FAST_CALL == reg[DBI_SYSCALL] && (ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
 		{
 			if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc))
 			{
@@ -228,33 +229,19 @@ EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
-	PFIRET* iret = PPAGE_FAULT_IRET(reg);
-
 	//in kernelmode can cause another PF and skip recursion handling :P
 
 	//previous mode == usermode ?
 #define USER_MODE_CS 0x1
-	if (iret->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
+	if (PPAGE_FAULT_IRET(reg)->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
 	{
 		CProcess2Fuzz* fuzzed_proc;
 		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
 		{
-
+			BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 			//DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
 			if (fuzzed_proc->PageFault(fault_addr, reg))
 				return NULL;
-		}
-		else
-		{
-			if (FAST_CALL == reg[DBI_IOCALL] && (ULONG_PTR)PsGetCurrentProcessId() != reg[DBI_FUZZAPP_PROC_ID])
-			{
-				if (CDbiMonitor::GetInstance().GetProcess((HANDLE)reg[DBI_FUZZAPP_PROC_ID], &fuzzed_proc))
-				{
-					if (fuzzed_proc->PageFault(fault_addr, reg))
-						return NULL;
-				}
-			}
 		}
 	}
 
@@ -344,6 +331,7 @@ void CDbiMonitor::TrapHandler(
 				}
 				else
 				{
+					//TODO : include this almost same code with branch above for TRAPs ...
 					//detect if int3 trap
 					if (ins_len == 1)
 					{
@@ -521,7 +509,7 @@ void CDbiMonitor::InstallPageFaultHooks()
 
 			{
 				CMdl mdl(reinterpret_cast<void*>(idtr.base), IDT_SIZE);
-				GATE_DESCRIPTOR* idt = reinterpret_cast<GATE_DESCRIPTOR*>(mdl.WritePtr());
+				GATE_DESCRIPTOR* idt = static_cast<GATE_DESCRIPTOR*>(mdl.WritePtr());
 				if (idt)
 				{
 					CDbiMonitor::GetInstance().SetPFHandler( core_id, reinterpret_cast<void*>(

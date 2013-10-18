@@ -87,7 +87,7 @@ __sti proc
 __sti endp
 
 __kebreak proc
-	int 3
+	;int 3
 	ret
 __kebreak endp
 

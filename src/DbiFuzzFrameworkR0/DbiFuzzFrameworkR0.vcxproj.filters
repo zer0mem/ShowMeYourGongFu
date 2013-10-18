@@ -208,8 +208,5 @@
     <None Include="..\Common\amd64\common.inc">
       <Filter>Common\amd64</Filter>
     </None>
-    <None Include="..\Common\FastCall\FastCall.inc">
-      <Filter>Common\FastCall</Filter>
-    </None>
   </ItemGroup>
 </Project>

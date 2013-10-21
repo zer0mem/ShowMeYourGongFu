@@ -12,7 +12,5 @@
 #define __INAPPFUZZDBIMODULE_H__
 
 extern "C" __declspec(dllexport) void ExtWaitForDbiEvent();
-extern "C" __declspec(dllexport) void ExtInfo();
-extern "C" __declspec(dllexport) void ExtMain();
 
 #endif //__INAPPFUZZDBIMODULE_H__

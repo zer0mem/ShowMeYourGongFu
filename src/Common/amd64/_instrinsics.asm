@@ -91,6 +91,11 @@ __kebreak proc
 	ret
 __kebreak endp
 
+__nop proc
+	nop
+	ret
+__nop endp
+
 __x64_cpuid proc
     mov rax,rcx
     cpuid

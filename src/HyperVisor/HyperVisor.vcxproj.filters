@@ -50,6 +50,9 @@
     <ClInclude Include="..\Common\Kernel\MemoryMapping.h">
       <Filter>Common\Kernel</Filter>
     </ClInclude>
+    <ClInclude Include="src\VmmAutoExit.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="driver_template.rc" />

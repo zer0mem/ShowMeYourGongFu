@@ -277,6 +277,7 @@
     <ClInclude Include="src\HyperVisor.h" />
     <ClInclude Include="src\VirtualizedCpu.h" />
     <ClInclude Include="src\VMX.h" />
+    <ClInclude Include="src\VmmAutoExit.hpp" />
     <ClInclude Include="StdAfx.h" />
   </ItemGroup>
   <ItemGroup>

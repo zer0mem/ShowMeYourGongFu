@@ -14,6 +14,8 @@
 #include "Common/Constants.h"
 #include "../../Common/FastCall/FastCall.h"
 
+#include "../../HyperVisor/src/VmmAutoExit.hpp"
+
 EXTERN_C void sysenter();
 EXTERN_C void rdmsr_hook();
 EXTERN_C void pagafault_hook();
@@ -257,115 +259,58 @@ void CDbiMonitor::TrapHandler(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	size_t ins_len;
-	if (!vmread(VMX_VMCS32_RO_EXIT_INSTR_LENGTH, &ins_len))
+	ULONG_PTR src = 0;
+	CVMMAutoExit vmm_exit;
+
+	//sucessfull readed ALL state info ? [ip, sp, flags, inslen, reason]
+	if (vmm_exit.GetInsLen())
 	{
-		ULONG_PTR ins_addr;
-		if (!vmread(VMX_VMCS64_GUEST_RIP, &ins_addr))//original 'ret'-addr
+		ULONG_PTR flags = vmm_exit.GetFlags();
+		if (vmm_exit.IsTrapActive())
+			vmm_exit.DisableTrap();	//turn off trap -> traps from kernel mode of windbg would not work as well ...
+		else if (vmm_exit.GetInsLen() > 1)
+			return;	//0xCC int3 means hook in tracer; TODO more properly detect if int3 not just size of opcode == 1
+
+		//is user mode ?
+		if (CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(vmm_exit.GetIp()))
 		{
-			//set-up next BTF hook
-			ULONG_PTR rflags = 0;
-			if (!vmread(VMX_VMCS_GUEST_RFLAGS, &rflags))
+			ULONG_PTR msr_btf_part;
+			if (!vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part))
 			{
-				if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(ins_addr)))
+				if (msr_btf_part & BTF)
 				{
-					//not user mode .. in kernel dbg condition will be oposite
-					vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
-					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-					return;//do not handle ...
-				}
-
-				if (rflags & TRAP)
-				{
-					ins_addr -= ins_len;					
-
-					ULONG_PTR src = 0;
-					ULONG_PTR msr_btf_part;
-					vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part);
-					if (msr_btf_part & BTF)
+					for (BYTE i = static_cast<BYTE>(rdmsr(MSR_LASTBRANCH_TOS)); i >= 0; i--)
 					{
-						for (BYTE i = (BYTE)rdmsr(MSR_LASTBRANCH_TOS); i >= 0; i--)
+						if (reinterpret_cast<const void*>(rdmsr(MSR_LASTBRANCH_0_TO_IP + i)) == vmm_exit.GetIp())
 						{
-							if (rdmsr(MSR_LASTBRANCH_0_TO_IP + i) == ins_addr)
+							src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
+							if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
 							{
-								src = rdmsr(MSR_LASTBRANCH_0_FROM_IP + i);
-								if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
-								{
-									//not user mode .. in kernel dbg condition will be oposite
-									vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
-									vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-									return;//do not handle ...
-								}
-								break;
+								//not user mode .. in kernel dbg condition will be oposite
+								return;//do not handle ...
 							}
-							src = 0;
+							break;
 						}
+						src = 0;
 					}
-
-					CAutoTypeMalloc<TRACE_INFO>* _trace_info = m_branchInfoQueue.Pop();//interlocked NonPage queue
-					if (_trace_info)
-					{
-						TRACE_INFO* trace_info = _trace_info->GetMemory();
-						if (trace_info)
-						{
-							if (!vmread(VMX_VMCS64_GUEST_RSP, &trace_info->StateInfo.IRet.StackPointer))
-							{
-								trace_info->StateInfo.IRet.Return = reinterpret_cast<void*>(ins_addr);
-								trace_info->PrevEip.Value = reinterpret_cast<const void*>(src);
-								trace_info->StateInfo.IRet.Flags = rflags;
-
-
-								//disable trap flag and let handle it by PageFault Hndlr
-								vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-								//set eip to non-exec mem for quick recognization by PageFault handler
-								vmwrite(VMX_VMCS64_GUEST_RSP, &trace_info->StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)]);//iret(5) + popaq(0x10) + semaphore(1)
-								vmwrite(VMX_VMCS64_GUEST_RIP, _trace_info);
-
-								return;
-							}
-						}						
-					}
-
-					vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-					vmwrite(VMX_VMCS64_GUEST_RIP, ins_addr);
 				}
-				else
+			}
+
+			CAutoTypeMalloc<TRACE_INFO>* trace_info_container = m_branchInfoQueue.Pop();//interlocked NonPage queue
+			if (trace_info_container)
+			{
+				TRACE_INFO* trace_info = trace_info_container->GetMemory();
+				if (trace_info)
 				{
-					//TODO : include this almost same code with branch above for TRAPs ...
-					//detect if int3 trap
-					if (ins_len == 1)
-					{
-						ins_addr -= ins_len;
+					trace_info->StateInfo.IRet.StackPointer = vmm_exit.GetSp();
+					trace_info->StateInfo.IRet.Return = const_cast<void*>(vmm_exit.GetIp());
+					trace_info->PrevEip.Value = reinterpret_cast<const void*>(src);
+					trace_info->StateInfo.IRet.Flags = flags;
 
-						CAutoTypeMalloc<TRACE_INFO>* _trace_info = m_branchInfoQueue.Pop();//interlocked NonPage queue
-						if (_trace_info)
-						{
-							TRACE_INFO* trace_info = _trace_info->GetMemory();
-							if (trace_info)
-							{
-								if (!vmread(VMX_VMCS64_GUEST_RSP, &trace_info->StateInfo.IRet.StackPointer))
-								{
-									trace_info->StateInfo.IRet.Return = reinterpret_cast<void*>(ins_addr);
-									trace_info->PrevEip.Value = 0;
-									trace_info->StateInfo.IRet.Flags = rflags;
-
-
-									//disable trap flag and let handle it by PageFault Hndlr
-									vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags & (~TRAP)));
-									//set eip to non-exec mem for quick recognization by PageFault handler
-									vmwrite(VMX_VMCS64_GUEST_RSP, &trace_info->StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)]);//iret(5) + popaq(0x10) + semaphore(1)
-									vmwrite(VMX_VMCS64_GUEST_RIP, _trace_info);
-
-									return;
-								}
-							}						
-						}
-					}
-
-
-
-				}
-
+					//set eip to non-exec mem for quick recognization by PageFault handler
+					vmm_exit.SetSp(&trace_info->StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)]);
+					vmm_exit.SetIp(trace_info_container);				
+				}						
 			}
 		}
 	}

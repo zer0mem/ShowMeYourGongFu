@@ -41,7 +41,13 @@ const WCHAR* wcschrn(
 #ifdef _WIN64
 
 EXTERN_C void __kebreak();
+EXTERN_C void __nop();
+
+#ifdef _DEBUG_MODE
 #define KeBreak __kebreak
+#else
+#define KeBreak __nop
+#endif
 
 #else
 __inline void KeBreak()

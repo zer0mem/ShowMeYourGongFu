@@ -28,7 +28,7 @@ public :
 		__in ULONG_PTR flags = 0
 		) : m_flags(flags)
 	{
-		m_begin = (ULONG_PTR)begin;
+		m_begin = reinterpret_cast<ULONG_PTR>(begin);
 		SetSize(size);
 	}
 

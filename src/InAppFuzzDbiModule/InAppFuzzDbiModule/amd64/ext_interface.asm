@@ -3,35 +3,35 @@ include ..\..\Common\amd64\common.inc
 .code
 
 fast_call_monitor_wait proc
-		push rbx
-		mov rbx, 0666h ;
+	push rbx
+	mov rbx, 0666h ;
 
-		xor rax, rax
-		push rax
-		lea rax, [rsp]
+	xor rax, rax
+	push rax
+	lea rax, [rsp]
 
-		xchg rax, rcx ; rcx is volatile to syscall end is with r11 automaticly rewritten
-		syscall
+	xchg rax, rcx ; rcx is volatile to syscall end is with r11 automaticly rewritten
+	syscall
 		
 _WaitForFuzzEvent:
-		cmp byte ptr[rsp], 0	; thread friendly waitforevent
-		jz _WaitForFuzzEvent
+	cmp byte ptr[rsp], 0	; thread friendly waitforevent
+	jz _WaitForFuzzEvent
 
-		pop rax
+	pop rax
 
-		pop rbx
-		ret
+	pop rbx
+	ret
 fast_call_monitor_wait endp
 
 fast_call_monitor proc
-		push rbx
-		mov rbx, 0666h ;
+	push rbx
+	mov rbx, 0666h ;
 
-		mov rax, rcx
-		syscall
+	mov rax, rcx
+	syscall
 
-		pop rbx
-		ret
+	pop rbx
+	ret
 fast_call_monitor endp
 
 ExtTrapTrace proc

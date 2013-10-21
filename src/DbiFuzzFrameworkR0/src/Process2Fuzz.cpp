@@ -145,10 +145,14 @@ bool CProcess2Fuzz::PageFault(
 							CImage* img;
 							GetImage(trace_info->GetMemory()->StateInfo.IRet.Return, &img);
 							if (img->IsHooked(trace_info->GetMemory()->StateInfo.IRet.Return))
+							{
 								DbgPrint("\nunhooking processing\n");
+								img->UninstallHook(trace_info->GetMemory()->StateInfo.IRet.Return);
+							}
 							else
+							{
 								DbgPrint("\nunhooking failed\n");
-							img->UninstallHook(trace_info->GetMemory()->StateInfo.IRet.Return);
+							}
 						}
 
 						//push back to trace_info queue

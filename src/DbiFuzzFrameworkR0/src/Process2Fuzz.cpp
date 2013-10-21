@@ -168,15 +168,8 @@ bool CProcess2Fuzz::PageFault(
 			{
 				fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret);
 
-				if (CMMU::IsAccessed(faultAddr))
-				{
-					CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));//invalidate it again by user-tracer calling setmembp ...
-
-					pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
-
-					return true;
-				}
-
+				pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
+				return true;
 			}
 			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 		}

@@ -17,26 +17,26 @@ struct CRange
 	//implicit
 	CRange(
 		__in const TYPE* begin
-		) : m_begin((ULONG_PTR)begin), m_end((ULONG_PTR)begin) { };
+		) : m_begin(reinterpret_cast<ULONG_PTR>(begin)), m_end(reinterpret_cast<ULONG_PTR>(begin)) { };
 
 	//implicit
 	CRange(
 		__in const TYPE* begin, 
 		__in const TYPE* end
-		) : m_begin((ULONG_PTR)begin), m_end((ULONG_PTR)end) { };
+		) : m_begin(reinterpret_cast<ULONG_PTR>(begin)), m_end(reinterpret_cast<ULONG_PTR>(end)) { };
 
 	//implicit
 	CRange(
 		__in const TYPE* begin, 
 		__in size_t size
-		) : m_begin((ULONG_PTR)begin), m_end((ULONG_PTR)begin + size) { };
+		) : m_begin(reinterpret_cast<ULONG_PTR>(begin)), m_end(reinterpret_cast<ULONG_PTR>(begin) + size) { };
 
 public:
 	bool IsInRange(
 		__in const TYPE* address
 		) const
 	{
-		return ((ULONG_PTR)address >= m_begin && (ULONG_PTR)address <= m_end);
+		return (reinterpret_cast<ULONG_PTR>(address) >= m_begin && reinterpret_cast<ULONG_PTR>(address) <= m_end);
 	};
 
 	void Set(
@@ -44,8 +44,8 @@ public:
 		__in const TYPE* end
 		)
 	{
-		m_begin = (ULONG_PTR)begin; 
-		m_end = max((ULONG_PTR)begin, (ULONG_PTR)end);
+		m_begin = reinterpret_cast<ULONG_PTR>(begin);
+		m_end = max(reinterpret_cast<ULONG_PTR>(begin), reinterpret_cast<ULONG_PTR>(end));
 	};
 
 	void SetSize(

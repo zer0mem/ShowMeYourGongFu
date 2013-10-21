@@ -10,7 +10,7 @@
 
 #include "Shared.h"
 
-#define MEMBER(cast, ptr, member) reinterpret_cast<cast*>((ULONG_PTR)(ptr) + (size_t)(member))
+#define MEMBER(cast, ptr, member) reinterpret_cast<cast*>(reinterpret_cast<ULONG_PTR>(ptr) + static_cast<size_t>(member))
 
 //----------------------------------------------------
 // ****************** DRIVER OBJECT ******************

@@ -20,7 +20,7 @@
 
 class CAutoVadShort
 {
-#define MIN_VAD_ALLOC_SIZE (max((size_t)CUndoc::EndingVpn(NULL), (size_t)CUndoc::StartingVpn(NULL)) + sizeof(*CUndoc::StartingVpn(NULL)))
+#define MIN_VAD_ALLOC_SIZE (max(reinterpret_cast<size_t>(CUndoc::EndingVpn(NULL)), reinterpret_cast<size_t>(CUndoc::StartingVpn(NULL))) + sizeof(*CUndoc::StartingVpn(NULL)))
 public:
 	CAutoVadShort(
 		__in const void* startAddr,
@@ -32,8 +32,8 @@ public:
 			if (!endAddr)
 				endAddr = startAddr;
 
-			*CUndoc::StartingVpn(m_autoFind) = (ULONG)((ULONG_PTR)startAddr >> PAGE_SHIFT);
-			*CUndoc::EndingVpn(m_autoFind) = (ULONG)((ULONG_PTR)endAddr >> PAGE_SHIFT);
+			*CUndoc::StartingVpn(m_autoFind) = static_cast<ULONG>(reinterpret_cast<ULONG_PTR>(startAddr) >> PAGE_SHIFT);
+			*CUndoc::EndingVpn(m_autoFind) = static_cast<ULONG>(reinterpret_cast<ULONG_PTR>(endAddr) >> PAGE_SHIFT);
 		}
 	}
 
@@ -95,6 +95,7 @@ bool CVadScanner::ScanAddressSpace()
 		}
 	}
 	DbgPrint("\nerror not locked!!!");
+	KeBreak();
 	return false;
 }
 
@@ -144,14 +145,13 @@ bool CVadScanner::GetNextVadMemoryRange(
 		if (auto_vad.GetFakeVadShort(&mem_find))
 		{
 			VAD_SHORT* mem_descryptor = NULL;
-			if (vad.Find(mem_find, &mem_descryptor))//== get lowerbound if addr = 0...
+			if (vad.Find(mem_find, &mem_descryptor))//matched -> but we want next!
 				if (!vad.GetNext(const_cast<const VAD_SHORT**>(&mem_descryptor)))
 					return false;
 
 			if (mem_descryptor)
 			{
-				CVadNodeMemRange mem(mem_descryptor);
-				*vadMemRange = mem;
+				::new(vadMemRange) CVadNodeMemRange(mem_descryptor);
 				return true;
 			}
 		}

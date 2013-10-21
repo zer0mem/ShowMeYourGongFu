@@ -29,7 +29,7 @@
 class CVadNodeMemRange : 
 	public CMemoryRange
 {
-#define EXPAND(addr) (ULONG_PTR)((ULONG)(addr) << PAGE_SHIFT)
+#define EXPAND(addr) (static_cast<ULONG_PTR>(addr) << PAGE_SHIFT)
 public:
 	CVadNodeMemRange(
 		__in const CVadNodeMemRange& origin

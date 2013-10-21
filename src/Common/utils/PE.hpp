@@ -80,7 +80,7 @@ public:
 		__in const void* funcId
 		)
 	{
-		return GetProcAddress(funcId, m_base, m_imgDir, MEMBER(IMAGE_EXPORT_DIRECTORY, m_base, m_imgDir[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress));
+		return GetProcAddress(funcId, m_base, m_base, m_imgDir, MEMBER(IMAGE_EXPORT_DIRECTORY, m_base, m_imgDir[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress));
 	}
 
 	__checkReturn
@@ -111,10 +111,11 @@ public:
 
 					const IMAGE_EXPORT_DIRECTORY* export_dir = static_cast<const IMAGE_EXPORT_DIRECTORY*>(export_dir_map.ReadPtrUser());
 					if (export_dir)
-						func_addr = GetProcAddress(funcId, img_base, img_dir, export_dir);
+						func_addr = GetProcAddress(funcId, base, img_base, img_dir, export_dir);
 				}							
 			}
 		}
+
 		return func_addr;
 	}
 	
@@ -159,6 +160,7 @@ private:
 	static 
 	const void* GetProcAddress(
 		__in const void* funcId,
+		__in const void* origBase,
 		__in const void* base,
 		__in const IMAGE_DATA_DIRECTORY* imgDir,
 		__in const IMAGE_EXPORT_DIRECTORY* export_dir
@@ -183,7 +185,7 @@ private:
 				}
 
 				if (addr)
-					return MEMBER(void, base, addr);
+					return MEMBER(void, origBase, addr);
 			}
 		}
 		//find by name
@@ -203,7 +205,7 @@ private:
 				else if (cmp > 0)
 					min = i;
 				else
-					return MEMBER(void, base, offset_table[ordinal_table[i]]);
+					return MEMBER(void, origBase, offset_table[ordinal_table[i]]);
 			}
 		}
 		return NULL;

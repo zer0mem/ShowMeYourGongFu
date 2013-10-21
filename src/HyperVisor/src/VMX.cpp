@@ -169,7 +169,7 @@ bool CVmx::VmcsInit()
 		}
 		ULONG_PTR intercepts;
 		vmread(VMX_VMCS_CTRL_EXCEPTION_BITMAP, &intercepts);
-		unsigned long mask = BTS(TRAP_debug) | BTS(TRAP_int3);// | BTS(TRAP_page_fault);
+		unsigned long mask = BTS(TRAP_debug);// | BTS(TRAP_int3);// | BTS(TRAP_page_fault);
 		intercepts |= mask;
 		vmwrite(VMX_VMCS_CTRL_EXCEPTION_BITMAP, intercepts);
 	}

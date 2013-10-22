@@ -149,6 +149,13 @@ class CDbiFuzzTracer(CCpu):
                              
         self.DbiGetProcAddress(self.m_cid.ProcId, pointer(proc))
         return proc.ApiAddr
+
+    def ReadPtr(self, mem):        
+        buff = self.ReadMemory(mem, 0x100)
+        ptr = 0
+        for i in range(0, 0x8):
+            ptr |= (buff[i] << (8 * i))
+        return ptr
         
 def main(pid):
     print("main start {")
@@ -181,14 +188,14 @@ def main(pid):
         print(hex(buff[i]))
         buff[i] += 1
 
-    #tracer.WriteMemory(kernel32, buff, 0x100)
+    tracer.WriteMemory(kernel32, buff, 0x100)
     
-    #buff2 = tracer.ReadMemory(kernel32, 0x100)
-    #for i in range(0, 0x4):
-        #print(hex(buff2[i]))
+    buff2 = tracer.ReadMemory(kernel32, 0x100)
+    for i in range(0, 0x4):
+        print(hex(buff2[i]))
 
     mem = tracer.NextMemory(0)
-    for i in range(0, 0x6):
+    for i in range(0, 0x10):
         print(hex(mem.Begin), " ", hex(mem.Size), " ", hex(mem.Flags))
         
         mem = tracer.NextMemory(mem.Begin)
@@ -198,7 +205,7 @@ def main(pid):
         
     print("shit")
     mem = tracer.NextMemory(kernel32)
-    for i in range(0, 0x6):
+    for i in range(0, 0x10):
         print(hex(mem.Begin), " ", hex(mem.Size), " ", hex(mem.Flags))
         
         mem = tracer.NextMemory(mem.Begin)
@@ -207,21 +214,29 @@ def main(pid):
             break
 
     print(hex(tracer.GetIp()))
+        
+    mmodule = tracer.GetModule("codecoverme")
+    print(hex(mmodule.Begin), hex(mmodule.Size))
     
-    
-    for i in range(0, 100):
+    for i in range(0, 0xFFFFFF):
+        if (mmodule.Begin > tracer.GetIp() or mmodule.Begin + mmodule.Size < tracer.GetIp()):            
+            tracer.SetAddressBreakpoint(tracer.ReadPtr(tracer.GetRsp()))
+            tracer.Go(tracer.GetIp())
+            print("HOOKED")
         tracer.BranchStep(tracer.GetIp())
         print(hex(tracer.GetIp()))
 
-    tracer.SetAddressBreakpoint(tracer.GetIp())
-    tracer.Go(tracer.GetIp())
-    
-    for i in range(0, 100):
+    print("} main pre-finish")
+    return
+        
+    for i in range(0, 4):
         tracer.BranchStep(tracer.GetIp())
         print(hex(tracer.GetIp()))
+        tracer.SetAddressBreakpoint(tracer.GetIp())
+        tracer.Go(tracer.GetIp())
         
     tracer.Go(tracer.GetIp())
     
     print("} main finish")
                         
-main(0xfec)
+main(0xe78)

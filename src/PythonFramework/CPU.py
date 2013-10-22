@@ -11,13 +11,13 @@ class CCpu:
         return self.m_ctx
     
     def GetRax(self):
-        return (self.m_ctx.self.m_ctx[0])
+        return (self.m_ctx[0])
     def GetEax(self):
-        return (self.m_ctx.self.m_ctx[0] & 0xFFFFFFFF)
+        return (self.m_ctx[0] & 0xFFFFFFFF)
     def GetAx(self):
-        return (self.m_ctx.self.m_ctx[0] & 0xFFFF)
+        return (self.m_ctx[0] & 0xFFFF)
     def GetAl(self):
-        return (self.m_ctx.self.m_ctx[0] & 0xFF)
+        return (self.m_ctx[0] & 0xFF)
     def GetAh(self):
         return (GetAx() >> 8)
     
@@ -64,7 +64,7 @@ class CCpu:
         return
     
     def GetRsp(self):
-        return
+        return self.m_ctx.TraceInfo.StateInfo.IRet.StackPointer
     def GetEsp(self):
         return
     def GetSp(self):

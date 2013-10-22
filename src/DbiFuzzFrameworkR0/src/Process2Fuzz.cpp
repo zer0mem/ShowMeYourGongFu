@@ -135,6 +135,8 @@ bool CProcess2Fuzz::PageFault(
 					//try except blog ? -> indeed use this address as ptr to kernel struct-> 
 					//TODO : check if it is really our kernel object !!!!!
 					const CAutoTypeMalloc<TRACE_INFO>* trace_info = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(pf_iret->IRet.Return);
+					DbgPrint("\n------->>>>>> %p [%p]\n", trace_info->GetMemory()->Reason, trace_info->GetMemory()->StateInfo.IRet.StackPointer);
+					KeBreak();
 					if (fuzz_thread->GetStack().IsInRange(trace_info->GetMemory()->StateInfo.IRet.StackPointer))
 					{
 						fuzz_thread->SmartTraceEvent(reg, trace_info->GetMemory(), pf_iret);
@@ -420,7 +422,7 @@ bool CProcess2Fuzz::DbiDumpMemory(
 			if (eprocess.IsAttached())
 			{
 				CMdl mdl_mntr(params.Src.Value, params.Size.Value);
-				const void* src = mdl_mntr.ReadPtrUser();
+				const void* src = mdl_mntr.ForceReadPtrUser();
 				if (src)
 				{
 					memcpy(dst, src, params.Size.Value);
@@ -450,7 +452,7 @@ bool CProcess2Fuzz::DbiPatchMemory(
 			{
 				KeBreak();
 				CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
-				void* dst = mdl_dbg.WritePtrUser();
+				void* dst = mdl_dbg.ForceWritePtrUser();
 				if (dst)
 				{
 					memcpy(dst, src, params.Size.Value);

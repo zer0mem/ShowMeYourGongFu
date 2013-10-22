@@ -265,12 +265,6 @@ void CDbiMonitor::TrapHandler(
 	//sucessfull readed ALL state info ? [ip, sp, flags, inslen, reason]
 	if (vmm_exit.GetInsLen())
 	{
-		ULONG_PTR flags = vmm_exit.GetFlags();
-		if (vmm_exit.IsTrapActive())
-			vmm_exit.DisableTrap();	//turn off trap -> traps from kernel mode of windbg would not work as well ...
-		else if (vmm_exit.GetInsLen() > 1)
-			return;	//0xCC int3 means hook in tracer; TODO more properly detect if int3 not just size of opcode == 1
-
 		//is user mode ?
 		if (CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(vmm_exit.GetIp()))
 		{
@@ -287,7 +281,7 @@ void CDbiMonitor::TrapHandler(
 							if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(reinterpret_cast<void*>(src)))
 							{
 								//not user mode .. in kernel dbg condition will be oposite
-								return;//do not handle ...
+								return;//skip handling
 							}
 							break;
 						}
@@ -305,13 +299,32 @@ void CDbiMonitor::TrapHandler(
 					trace_info->StateInfo.IRet.StackPointer = vmm_exit.GetSp();
 					trace_info->StateInfo.IRet.Return = const_cast<void*>(vmm_exit.GetIp());
 					trace_info->PrevEip.Value = reinterpret_cast<const void*>(src);
-					trace_info->StateInfo.IRet.Flags = flags;
+					trace_info->StateInfo.IRet.Flags = vmm_exit.GetFlags();
 
 					//set eip to non-exec mem for quick recognization by PageFault handler
 					vmm_exit.SetSp(&trace_info->StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)]);
-					vmm_exit.SetIp(trace_info_container);				
-				}						
+					vmm_exit.SetIp(trace_info_container);
+
+					if (vmm_exit.IsTrapActive())
+						vmm_exit.DisableTrap();	
+
+					return;//is handled!
+				}
 			}
+		}
+
+		//post handling of kernel code
+		switch(vmm_exit.GetInterruptionInfo())
+		{
+		case TRAP_debug:
+			if (vmm_exit.IsTrapActive())
+				vmm_exit.DisableTrap();	//turn off trap -> traps from kernel mode of windbg would not work as well ...
+			break;
+		case TRAP_int3:
+			vmm_exit.SetIp(static_cast<const BYTE*>(vmm_exit.GetIp()) + vmm_exit.GetInsLen());//skip int3 if we are not able to handle it in following code ...
+			break;
+			//TODO
+			//case TRAP_page_fault:
 		}
 	}
 }

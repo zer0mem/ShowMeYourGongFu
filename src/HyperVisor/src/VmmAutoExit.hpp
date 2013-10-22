@@ -10,6 +10,8 @@
 
 class CVMMAutoExit
 {
+#define INTERRUPTION_INFO_TYPE_SHIFT 8
+#define INTERRUPTION_INFO_TYPE(a) (((a) >> INTERRUPTION_INFO_TYPE_SHIFT) & 7)
 public:
 	__forceinline
 	CVMMAutoExit() : 
@@ -17,9 +19,9 @@ public:
 		m_insLen(0),
 		m_sp(NULL),
 		m_flags(0),
-		m_reason(0)
+		m_intInfo(0)
 	{
-		if (vmread(!VMX_VMCS32_RO_EXIT_REASON, &m_reason))
+		if (!vmread(VMX_VMCS32_RO_EXIT_INTERRUPTION_INFO, &m_intInfo))
 			if (!vmread(VMX_VMCS64_GUEST_RIP, &m_ip))
 				if (!vmread(VMX_VMCS64_GUEST_RSP, &m_sp))
 					if (!vmread(VMX_VMCS_GUEST_RFLAGS, &m_flags))
@@ -87,12 +89,18 @@ public:
 		return m_insLen;
 	}
 
+	__forceinline
+	BYTE GetInterruptionInfo()
+	{
+		return static_cast<BYTE>(m_intInfo);
+	}
+
 protected:
 	const void* m_ip;
 	size_t m_insLen;
 	ULONG_PTR* m_sp;
 	ULONG_PTR m_flags;
-	ULONG_PTR m_reason;
+	ULONG_PTR m_intInfo;
 };
 
 #endif //__VMMAUTOEXIT_H__

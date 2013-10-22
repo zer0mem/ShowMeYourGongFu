@@ -161,6 +161,34 @@ void* CMdl::Map(
 	return m_mem;
 }
 
+_IRQL_requires_max_(APC_LEVEL)
+__checkReturn 
+const void* CMdl::ForceReadPtrUser( 
+	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached */
+	)
+{
+	const void* mem = ReadPtrUser();
+	if (!mem)
+		mem = ReadPtr();
+	return mem;
+}
+
+_IRQL_requires_max_(APC_LEVEL)
+__checkReturn
+void* CMdl::ForceWritePtrUser( 
+	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached */
+	)
+{
+	void* mem = WritePtrUser();
+	if (!mem)
+	{
+		mem = WritePtr();
+		if (!mem)
+			mem = WritePtrUnsafe();
+	}
+	return mem;		
+}
+
 //************* physical to virtual *************
 
 _IRQL_requires_max_(DISPATCH_LEVEL)

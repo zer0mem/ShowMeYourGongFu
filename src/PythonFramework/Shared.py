@@ -26,6 +26,7 @@ class PFIRET(Structure):
 class TRACE_INFO(Structure):
     _fields_ = [
         ('StateInfo', PFIRET), 
+        ('Bft', c_ulonglong), 
         ('PrevEip', c_ulonglong), 
         ('Reason', c_ulonglong) ]
     

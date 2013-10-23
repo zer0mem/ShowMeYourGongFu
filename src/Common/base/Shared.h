@@ -43,8 +43,6 @@ typedef const void *LPCVOID;
 // ****************** DEFINE HELPERS ******************
 //-----------------------------------------------------
 
-#define DIRTY_FLAG ((ULONG_PTR)1 << 32)
-
 enum EnumIRET
 {
 	IReturn = 0,

@@ -111,7 +111,6 @@ public:
 		);
 
 protected:
-	PETHREAD m_thread;
 	PEPROCESS m_process;
 };
 

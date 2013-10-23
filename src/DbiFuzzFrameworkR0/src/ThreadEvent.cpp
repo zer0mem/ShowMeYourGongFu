@@ -94,7 +94,7 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 	__in const BYTE* faultAddr
 	)
 {
-	pfIRet->IRet.StackPointer = &pfIRet->IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
+	DbgPrint("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@@ MEMORY BP : %p [%x   / %p]\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n", mem->Begin(), mem->GetSize(), mem->GetFlags());
 	DbiOutContext.TraceInfo.StateInfo = *pfIRet;
 	DbiOutContext.MemoryInfo.Memory.Value = faultAddr;
 	DbiOutContext.MemoryInfo.Begin.Value = mem->Begin();
@@ -105,40 +105,18 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 
 	if (CMMU::IsAccessed(faultAddr))
 	{
-		CMMU::SetValid(faultAddr, sizeof(ULONG_PTR));
+		CMMU::SetValid(mem->Begin(), mem->GetSize());
+		DbgPrint("\nis accesed and set to be valid ...\n");
 
 		CMdl mdl(faultAddr, sizeof(ULONG_PTR));
 		const ULONG_PTR* val = static_cast<const ULONG_PTR*>(mdl.ReadPtr());
 		if (val)
 			DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
 
-		CMMU::SetInvalid(faultAddr, sizeof(ULONG_PTR));
+		//CMMU::SetInvalid(faultAddr, sizeof(ULONG_PTR));
 	}
 
-	return LoadContext(reg);
-}
-
-void CThreadEvent::HookEvent(
-	__in ULONG_PTR reg[REG_COUNT], 
-	__in PFIRET* pfIRet 
-	)
-{
-	if (m_dbgThreadInfo.LoadHookContext(reg, pfIRet))
-		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
-			(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set fot this target-thread, then just freeze target-thread
-}
-
-__checkReturn
-bool DBG_THREAD_EVENT::LoadHookContext( 
-	__in ULONG_PTR reg[REG_COUNT],  
-	__in PFIRET* pfIRet 
-	)
-{
 	pfIRet->IRet.StackPointer = &pfIRet->IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
-	DbiOutContext.TraceInfo.StateInfo = *pfIRet;
-	DbiOutContext.TraceInfo.PrevEip.Value = 0;
-	DbiOutContext.TraceInfo.Reason.Value = Hook;
-	RtlZeroMemory(&DbiOutContext.MemoryInfo, sizeof(DbiOutContext.MemoryInfo));
 	return LoadContext(reg);
 }
 

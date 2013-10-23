@@ -135,8 +135,6 @@ bool CProcess2Fuzz::PageFault(
 					//try except blog ? -> indeed use this address as ptr to kernel struct-> 
 					//TODO : check if it is really our kernel object !!!!!
 					const CAutoTypeMalloc<TRACE_INFO>* trace_info = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(pf_iret->IRet.Return);
-					DbgPrint("\n------->>>>>> %p [%p]\n", trace_info->GetMemory()->Reason, trace_info->GetMemory()->StateInfo.IRet.StackPointer);
-					KeBreak();
 					if (fuzz_thread->GetStack().IsInRange(trace_info->GetMemory()->StateInfo.IRet.StackPointer))
 					{
 						fuzz_thread->SmartTraceEvent(reg, trace_info->GetMemory(), pf_iret);
@@ -173,8 +171,10 @@ bool CProcess2Fuzz::PageFault(
 			if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem))//bullshit, what if another thread raise to this point ??
 			{
 				fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret);
-
 				pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
+
+				//just for test ... one threaded is ok, in multithreading it is epic fail!
+				m_mem2watch.Pop(CMemoryRange(mem->Begin(), mem->End()));//TODO kick this out; pop addressBP and memoryBP have to do user mode tracer!
 				return true;
 			}
 			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
@@ -257,11 +257,12 @@ bool CProcess2Fuzz::DbiSetMemoryBreakpoint(
 		CVadNodeMemRange vad_mem;
 		if (m_vad.FindVadMemoryRange(mem2watch, &vad_mem))
 		{
-			if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags | DIRTY_FLAG)))
+			if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags)))
 			{
-				for (size_t page_walker = 0; page_walker < size; page_walker += PAGE_SIZE)
-					if (CMMU::IsAccessed(mem2watch + page_walker))
-						CMMU::SetInvalid(mem2watch + page_walker, PAGE_SIZE);
+				CEProcess eprocess(m_processId);
+				CAutoEProcessAttach attach(eprocess);
+				if (eprocess.IsAttached())
+					CMMU::SetInvalid(mem2watch, size);//if not accessed then not set ...
 			}
 		}
 		return true;
@@ -303,7 +304,7 @@ NTSYSAPI
 NTSTATUS 
 NTAPI 
 ZwSuspendThread( IN HANDLE ThreadHandle, OUT PULONG PreviousSuspendCount OPTIONAL );
-
+//probably skip zwsuspendthread, and suspend thread based on PageFault handling and sempahor for suspending targeted thread
 __checkReturn
 bool CProcess2Fuzz::DbiSuspendThread( 
 	__inout ULONG_PTR reg[REG_COUNT] 
@@ -389,6 +390,7 @@ bool CProcess2Fuzz::DbiEnumMemory(
 {
 	CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MEMORY_ENUM));
 	MEMORY_ENUM* mem = static_cast<MEMORY_ENUM*>(auto_mem.WritePtrUser());
+
 	if (mem)
 	{
 		CVadNodeMemRange vad_mem;

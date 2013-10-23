@@ -97,12 +97,6 @@ struct DBG_THREAD_EVENT :
 		);
 
 	__checkReturn
-	bool LoadHookContext( 
-		__in ULONG_PTR reg[REG_COUNT],
-		__in PFIRET* pfIRet
-		);
-
-	__checkReturn
 	bool LoadPFContext( 
 		__in ULONG_PTR reg[REG_COUNT],
 		__in CMemoryRange* mem, 
@@ -140,11 +134,6 @@ public:
 	~CThreadEvent();
 
 // FUZZ MONITOR HANDLER support routines
-	void HookEvent( 
-		__in ULONG_PTR reg[REG_COUNT], 
-		__in PFIRET* pfIRet 
-		);
-
 	void SmartTraceEvent( 
 		__in ULONG_PTR reg[REG_COUNT], 
 		__in const TRACE_INFO* branchInfo,

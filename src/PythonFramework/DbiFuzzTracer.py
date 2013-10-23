@@ -74,22 +74,22 @@ class CDbiFuzzTracer(CCpu):
     def Go(self, ip):
         self.__Context__().TraceInfo.StateInfo.IRet.Flags &= ~0x100
         self.__Context__().TraceInfo.StateInfo.IRet.Return = ip
-        #self.__Context__().TraceInfo.BTF = 0;
         self.SmartTrace(self.m_cid.ProcId, self.m_cid.ThreadId, pointer(self.__Context__()))
         return self.__Context__().TraceInfo.StateInfo.IRet.Return
         
     def SingleStep(self, ip):
         self.__Context__().TraceInfo.StateInfo.IRet.Flags |= 0x100
         self.__Context__().TraceInfo.StateInfo.IRet.Return = ip
-        #self.__Context__().TraceInfo.BTF = 0;
+        self.__Context__().TraceInfo.Bft = 0
         self.SmartTrace(self.m_cid.ProcId, self.m_cid.ThreadId, pointer(self.__Context__()))
-        return self.__Context__().TraceInfo.Eip
+        return self.__Context__().TraceInfo.StateInfo.IRet.Return
         
     def BranchStep(self, ip):
         self.__Context__().TraceInfo.StateInfo.IRet.Flags |= 0x100
         self.__Context__().TraceInfo.StateInfo.IRet.Return = ip
-        #self.__Context__().TraceInfo.BTF = 1;
+        self.__Context__().TraceInfo.Bft = 1
         self.SmartTrace(self.m_cid.ProcId, self.m_cid.ThreadId, pointer(self.__Context__()))
+        return self.__Context__().TraceInfo.StateInfo.IRet.Return
         
 #thread non-specific == affect all threads! -> should be implemented as thread specific!!!
     def SetAddressBreakpoint(self, ip):
@@ -188,7 +188,7 @@ def main(pid):
         print(hex(buff[i]))
         buff[i] += 1
 
-    tracer.WriteMemory(kernel32, buff, 0x100)
+    #tracer.WriteMemory(kernel32, buff, 0x100)
     
     buff2 = tracer.ReadMemory(kernel32, 0x100)
     for i in range(0, 0x4):
@@ -212,8 +212,24 @@ def main(pid):
         if (mem == None):
             print("memory chunks count reached")
             break
-
+        
     print(hex(tracer.GetIp()))
+    tracer.SingleStep(tracer.GetIp())
+    print(hex(tracer.GetIp()))
+    tracer.SingleStep(tracer.GetIp())
+    print(hex(tracer.GetIp()))
+        
+    for i in range(0, 10):
+        print("next round")
+        
+        tracer.SetMemoryBreakpoint(0x2340000, 0x400)
+        tracer.Go(tracer.GetIp())
+        
+        print(hex(tracer.GetIp()))
+        tracer.SingleStep(tracer.GetIp())
+        print(hex(tracer.GetIp()))
+        
+    return
         
     mmodule = tracer.GetModule("codecoverme")
     print(hex(mmodule.Begin), hex(mmodule.Size))
@@ -239,4 +255,4 @@ def main(pid):
     
     print("} main finish")
                         
-main(0xe78)
+main(0xc30)

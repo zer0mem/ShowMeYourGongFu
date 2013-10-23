@@ -254,10 +254,10 @@ private:
 		__in size_t size
 		)
 	{
-		const BYTE* end_addr = reinterpret_cast<const BYTE*>(PAGE_ALIGN((ULONG_PTR)addr + size + PAGE_SIZE));
-		for (addr = reinterpret_cast<const BYTE*>(addr); 
+		const BYTE* end_addr = static_cast<const BYTE*>(PAGE_ALIGN(reinterpret_cast<ULONG_PTR>(addr) + size + PAGE_SIZE));
+		for (addr = static_cast<const BYTE*>(addr); 
 			addr < end_addr; 
-			addr = reinterpret_cast<const void*>((ULONG_PTR)addr + PAGE_SIZE))
+			addr = reinterpret_cast<const BYTE*>(reinterpret_cast<ULONG_PTR>(addr) + PAGE_SIZE))
 		{
 			CMMU mmu(addr);
 			PAGE_TABLE_ENTRY pte;

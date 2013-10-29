@@ -285,7 +285,6 @@ void CDbiMonitor::TrapHandler(
 							}
 							break;
 						}
-						src = 0;
 					}
 				}
 			}
@@ -367,7 +366,11 @@ void CDbiMonitor::WrMsrSpecialBTF(
 		//handle just dword-low
 		ULONG_PTR msr_btf_part;
 		vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part);
-		reg[RAX] &= msr_btf_part;
+
+		if (reg[RAX] & BTF)
+			reg[RAX] |= msr_btf_part;//enable BTF + LBR
+		else
+			reg[RAX] &= msr_btf_part;//disable BTF + LBR
 
 		vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, reg[RAX]);
 		vmread(VMX_VMCS_GUEST_DEBUGCTL_HIGH, &reg[RDX]);
@@ -466,6 +469,7 @@ void CDbiMonitor::InstallPageFaultHooks()
 			sidt(&idtr);
 
 			{
+				CDispatchLvl irql;
 				CMdl mdl(reinterpret_cast<void*>(idtr.base), IDT_SIZE);
 				GATE_DESCRIPTOR* idt = static_cast<GATE_DESCRIPTOR*>(mdl.WritePtr());
 				if (idt)

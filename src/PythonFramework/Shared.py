@@ -5,6 +5,11 @@ from _ctypes import *
 
 #common interface
 
+BranchTraceFlag = 0
+SingleTraceFlag = 1
+Hook = 2
+MemoryAccess = 3
+
 class CID_ENUM(Structure):
     _fields_ = [
         ('ProcId', c_ulonglong), 
@@ -26,8 +31,8 @@ class PFIRET(Structure):
 class TRACE_INFO(Structure):
     _fields_ = [
         ('StateInfo', PFIRET), 
-        ('Bft', c_ulonglong), 
-        ('PrevEip', c_ulonglong), 
+        ('Btf', c_ulonglong), 
+        ('PrevIp', c_ulonglong), 
         ('Reason', c_ulonglong) ]
     
 class MEMORY_ACCESS(Structure):

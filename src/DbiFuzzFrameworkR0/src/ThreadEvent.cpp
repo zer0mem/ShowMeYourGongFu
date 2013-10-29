@@ -57,6 +57,7 @@ bool EVENT_THREAD_INFO::FlipSemaphore()
 	if (EventSemaphor)
 	{
 		CEProcess eprocess(ProcessId);
+		CApcLvl irql;
 		CAutoEProcessAttach process(eprocess);
 		if (eprocess.IsAttached())
 		{
@@ -103,17 +104,19 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 	DbiOutContext.MemoryInfo.OriginalValue.Value = 0;
 	DbiOutContext.TraceInfo.Reason.Value = MemoryAcces;
 
-	if (CMMU::IsAccessed(faultAddr))
+	if (CMMU::IsAccessed(faultAddr) && !CMMU::IsValid(faultAddr))
 	{
 		CMMU::SetValid(mem->Begin(), mem->GetSize());
-		DbgPrint("\nis accesed and set to be valid ...\n");
 
+		CApcLvl irql;
 		CMdl mdl(faultAddr, sizeof(ULONG_PTR));
-		const ULONG_PTR* val = static_cast<const ULONG_PTR*>(mdl.ReadPtr());
+		const ULONG_PTR* val = static_cast<const ULONG_PTR*>(mdl.ForceReadPtrUser());
 		if (val)
 			DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
 
-		//CMMU::SetInvalid(faultAddr, sizeof(ULONG_PTR));
+		DbgPrint("\nafter read %p\n", *val);
+
+		CMMU::SetInvalid(faultAddr, sizeof(ULONG_PTR));
 	}
 
 	pfIRet->IRet.StackPointer = &pfIRet->IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
@@ -129,7 +132,7 @@ void CThreadEvent::SmartTraceEvent(
 {
 	if (m_dbgThreadInfo.LoadTrapContext(reg, branchInfo, pfIRet))
 		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
-			(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set fot this target-thread, then just freeze target-thread
+			(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set for this target-thread, then just freeze target-thread
 }
 
 __checkReturn
@@ -193,10 +196,11 @@ bool DBI_THREAD_EVENT::LoadContext(
 {
 	ProcessId = PsGetCurrentProcessId();
 	//semaphore should be on the top of the stack!
-	EventSemaphor = reinterpret_cast<void *>(HOOK_ORIG_RSP(reg));
+	EventSemaphor = reinterpret_cast<void*>(HOOK_ORIG_RSP(reg));
 	ContextOnStack = reinterpret_cast<void*>(reg[DBI_PARAMS]);
 
 	//load to dbioutcontext var
+	CApcLvl irql;
 	CMdl r_auto_context(ContextOnStack, sizeof(DbiOutContext));
 	const DBI_OUT_CONTEXT* dbi_out_context = static_cast<const DBI_OUT_CONTEXT*>(r_auto_context.ReadPtrUser());
 	if (dbi_out_context)
@@ -215,11 +219,12 @@ bool DBI_THREAD_EVENT::UpdateContext(
 	)
 {
 	CEProcess eprocess(ProcessId);
+	CApcLvl irql;
 	CAutoEProcessAttach attach2process(eprocess);
 	if (eprocess.IsAttached())
 	{
 		CMdl dbi_auto_context(ContextOnStack, sizeof(cthreadInfo.DbiOutContext));
-		DBI_OUT_CONTEXT* dbi_context = static_cast<DBI_OUT_CONTEXT*>(dbi_auto_context.WritePtrUser());
+		DBI_OUT_CONTEXT* dbi_context = static_cast<DBI_OUT_CONTEXT*>(dbi_auto_context.ForceWritePtrUser());
 		if (dbi_context)
 		{
 			*dbi_context = cthreadInfo.DbiOutContext;
@@ -247,8 +252,9 @@ bool DBG_THREAD_EVENT::LoadContext(
 	EventSemaphor = &DbiOutContext.TraceInfo.StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
 
 	//flip semaphore to wait state!
+	CApcLvl irql;
 	CMdl semaphore_mdl(EventSemaphor, sizeof(ULONG_PTR));//semaphore
-	ULONG_PTR* semaphore = static_cast<ULONG_PTR*>(semaphore_mdl.WritePtr());
+	ULONG_PTR* semaphore = static_cast<ULONG_PTR*>(semaphore_mdl.ForceWritePtrUser());
 	if (semaphore)
 	{
 		*semaphore = 0;
@@ -266,6 +272,7 @@ bool DBG_THREAD_EVENT::UpdateContext(
 	)
 {
 	CEProcess eprocess(ProcessId);
+	CApcLvl irql;
 	CAutoEProcessAttach attach2process(eprocess);
 	if (eprocess.IsAttached())
 	{
@@ -277,7 +284,7 @@ bool DBG_THREAD_EVENT::UpdateContext(
 			memcpy(reg_context, cthreadInfo.DbiOutContext.GeneralPurposeContext, sizeof(ULONG_PTR) * REG_X64_COUNT);
 			
 			CMdl r_auto_context(IRet, sizeof(IRET));
-			IRET* iret = static_cast<IRET*>(r_auto_context.WritePtr());
+			IRET* iret = static_cast<IRET*>(r_auto_context.ForceWritePtrUser());
 			if (iret)
 			{
 				if (!cthreadInfo.DbiOutContext.TraceInfo.Btf.Value)

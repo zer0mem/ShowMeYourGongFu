@@ -261,7 +261,7 @@ private:
 		{
 			CMMU mmu(addr);
 			PAGE_TABLE_ENTRY pte;
-			if (mmu.GetPTE(pte))
+			if (mmu.GetPTE(pte) && (pte.Accessed || pte.Valid))//alter only used pages!!
 			{
 				switch (FLAG)
 				{

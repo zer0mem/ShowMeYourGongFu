@@ -13,8 +13,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 CMdl::CMdl(
 	__in void* virtualAddress, 
 	__in size_t size
-	) : m_locked(false),
-		m_mem(NULL)
+	) : m_mem(NULL)
 {
 	m_lockOperation = IoModifyAccess;
 	m_mdl = IoAllocateMdl(virtualAddress, (ULONG)size, FALSE, FALSE, NULL);
@@ -23,8 +22,7 @@ CMdl::CMdl(
 CMdl::CMdl( 
 	__in const void* virtualAddress, 
 	__in size_t size 
-	) : m_locked(false),
-		m_mem(NULL)
+	) : m_mem(NULL)
 {
 	m_lockOperation = IoReadAccess;
 	m_mdl = IoAllocateMdl(const_cast<void*>(virtualAddress), (ULONG)size, FALSE, FALSE, NULL);
@@ -35,11 +33,8 @@ CMdl::~CMdl()
 {
 	if (m_mdl)
 	{
-		if (m_locked)
-		{
+		if (m_mdl->MdlFlags & MDL_PAGES_LOCKED)
 			MmUnlockPages(m_mdl);
-			m_locked = false;
-		}
 
 		IoFreeMdl(m_mdl);
 	}
@@ -52,23 +47,24 @@ bool CMdl::Lock(
 	__in bool user
 	)
 {
-	if (!m_locked)
+	bool new_lock = false;
+	if (!(m_mdl->MdlFlags & MDL_PAGES_LOCKED))
 	{
 		__try 
 		{
 			MmProbeAndLockPages(m_mdl, user ? UserMode : KernelMode, m_lockOperation);
-			m_locked = true;
+			new_lock = true;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
 			//DbgPrint("\n LOCK ERROR\n");
 		}
 	}
-	return m_locked;
+	return new_lock;
 }
 
 //If AccessMode is UserMode, the caller must be running at IRQL <= APC_LEVEL. If AccessMode is KernelMode, the caller must be running at IRQL <= DISPATCH_LEVEL.
-_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_max_(DISPATCH_LEVEL)
 __checkReturn
 const void* CMdl::ReadPtr(
 	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached*/ 
@@ -77,7 +73,7 @@ const void* CMdl::ReadPtr(
 	return Map(cacheType, false);
 }
 
-_IRQL_requires_max_(APC_LEVEL)
+_IRQL_requires_max_(DISPATCH_LEVEL)
 __checkReturn
 void* CMdl::WritePtr( 
 	__in_opt MEMORY_CACHING_TYPE cacheType /*= MmCached */
@@ -132,7 +128,7 @@ void* CMdl::WritePtrUser(
 _IRQL_requires_max_(APC_LEVEL)
 void CMdl::Unmap()
 {
-	if (m_mem && m_mdl && !m_locked)
+	if (m_mem && m_mdl && !(m_mdl->MdlFlags & MDL_PAGES_LOCKED))
 	{
 		MmUnmapLockedPages(m_mem, m_mdl);
 		m_mem = NULL;

@@ -140,7 +140,8 @@ protected:
 // ****************** VAD AVL WALKER ******************
 //-----------------------------------------------------
 
-class CVadWalker : public CBinTreeWalker<VAD_SHORT>
+class CVadWalker : 
+	public CBinTreeWalker<VAD_SHORT>
 {
 public:
 	CVadWalker(

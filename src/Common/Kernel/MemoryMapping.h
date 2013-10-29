@@ -27,13 +27,13 @@ public:
 
 	~CMdl();
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	__checkReturn
 	const void* ReadPtr(
 		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
 		);
 
-	_IRQL_requires_max_(APC_LEVEL)
+	_IRQL_requires_max_(DISPATCH_LEVEL)
 	__checkReturn
 	void* WritePtr(
 		__in_opt MEMORY_CACHING_TYPE cacheType = MmCached
@@ -84,7 +84,6 @@ protected:
 protected:
 	MDL* m_mdl;
 	void* m_mem;
-	bool m_locked;
 	LOCK_OPERATION  m_lockOperation;
 	CApcLvl m_apcIRQL;
 };

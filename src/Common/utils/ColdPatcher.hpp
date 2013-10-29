@@ -27,6 +27,7 @@ public:
 		{
 //const_cast + WritePtrUnsafe ==>> IoReadAccess isntead of IoModifyAccess ==> hook problems ... but this is wrong concept, find another solution ...
 //probably it is already locked against modify ... 
+			CApcLvl irql;
 			CMdl patcher(addrToHook, size);
 			void* cold_patch = patcher.WritePtrUnsafe();
 
@@ -50,6 +51,7 @@ public:
 		{
 //const_cast + WritePtrUnsafe ==>> IoReadAccess isntead of IoModifyAccess ==> hook problems ... but this is wrong concept, find another solution ...
 //probably it is already locked against modify ... 
+			CApcLvl irql;
 			CMdl patcher(m_addrToHook, size);
 			void* cold_patch = patcher.WritePtrUnsafe();
 

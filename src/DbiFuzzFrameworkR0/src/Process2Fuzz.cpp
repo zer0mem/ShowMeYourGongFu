@@ -134,29 +134,14 @@ bool CProcess2Fuzz::PageFault(
 				{
 					//try except blog ? -> indeed use this address as ptr to kernel struct-> 
 					//TODO : check if it is really our kernel object !!!!!
-					const CAutoTypeMalloc<TRACE_INFO>* trace_info = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(pf_iret->IRet.Return);
-					if (fuzz_thread->GetStack().IsInRange(trace_info->GetMemory()->StateInfo.IRet.StackPointer))
+					const CAutoTypeMalloc<TRACE_INFO>* trace_info_container = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(pf_iret->IRet.Return);
+					TRACE_INFO* trace_info = trace_info_container->GetMemory();
+					if (fuzz_thread->GetStack().IsInRange(trace_info->StateInfo.IRet.StackPointer))
 					{
-						fuzz_thread->SmartTraceEvent(reg, trace_info->GetMemory(), pf_iret);
-
-						//TEST INT3 system of hooks
-						if (!(trace_info->GetMemory()->StateInfo.IRet.Flags & TRAP))
-						{
-							CImage* img;
-							GetImage(trace_info->GetMemory()->StateInfo.IRet.Return, &img);
-							if (img->IsHooked(trace_info->GetMemory()->StateInfo.IRet.Return))
-							{
-								DbgPrint("\nunhooking processing\n");
-								img->UninstallHook(trace_info->GetMemory()->StateInfo.IRet.Return);
-							}
-							else
-							{
-								DbgPrint("\nunhooking failed\n");
-							}
-						}
+						fuzz_thread->SmartTraceEvent(reg, trace_info, pf_iret);
 
 						//push back to trace_info queue
-						CDbiMonitor::m_branchInfoQueue.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info));
+						CDbiMonitor::m_branchInfoQueue.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info_container));
 						//handle branch tracing - callback from HV
 						pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
 
@@ -172,9 +157,6 @@ bool CProcess2Fuzz::PageFault(
 			{
 				fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret);
 				pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
-
-				//just for test ... one threaded is ok, in multithreading it is epic fail!
-				m_mem2watch.Pop(CMemoryRange(mem->Begin(), mem->End()));//TODO kick this out; pop addressBP and memoryBP have to do user mode tracer!
 				return true;
 			}
 			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
@@ -196,6 +178,7 @@ bool CProcess2Fuzz::DbiInit(
 	if (GetFuzzThread((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], &fuzz_thread))
 	{
 		CEProcess eprocess(m_processId);
+		CApcLvl irql;
 		CAutoEProcessAttach attach(eprocess);
 		if (eprocess.IsAttached())
 			return fuzz_thread->Init(reg);
@@ -222,7 +205,8 @@ bool CProcess2Fuzz::DbiRemoteTrace(
 
 __checkReturn
 bool CProcess2Fuzz::DbiSetAddressBreakpoint( 
-	__inout ULONG_PTR reg[REG_COUNT] 
+	__inout ULONG_PTR reg[REG_COUNT],
+	__in ULONG syscallId
 	)
 {
 	PARAM_HOOK params;
@@ -232,10 +216,21 @@ bool CProcess2Fuzz::DbiSetAddressBreakpoint(
 		if (GetImage(params.HookAddr.Value, &img))
 		{
 			CEProcess eprocess(m_processId);
+			CApcLvl irql;
 			CAutoEProcessAttach attach(eprocess);
 			if (eprocess.IsAttached())
 			{
-				return img->SetUpNewRelHook(params.HookAddr.Value, m_extRoutines[ExtHook]);
+				if (SYSCALL_SET_ADDRESS_BP == syscallId)
+				{
+					return img->SetUpNewRelHook(params.HookAddr.Value, m_extRoutines[ExtHook]);
+				}
+				else
+				{
+					if (img->IsHooked(params.HookAddr.Value))
+						img->UninstallHook(params.HookAddr.Value);
+
+					return !img->IsHooked(params.HookAddr.Value);
+				}
 			}
 		}
 	}
@@ -244,7 +239,8 @@ bool CProcess2Fuzz::DbiSetAddressBreakpoint(
 
 __checkReturn
 bool CProcess2Fuzz::DbiSetMemoryBreakpoint( 
-	__inout ULONG_PTR reg[REG_COUNT] 
+	__inout ULONG_PTR reg[REG_COUNT],
+	__in ULONG syscallId
 	)
 {
 	PARAM_MEM2WATCH params;
@@ -257,12 +253,21 @@ bool CProcess2Fuzz::DbiSetMemoryBreakpoint(
 		CVadNodeMemRange vad_mem;
 		if (m_vad.FindVadMemoryRange(mem2watch, &vad_mem))
 		{
-			if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags)))
+			CEProcess eprocess(m_processId);
+			CApcLvl irql;
+			CAutoEProcessAttach attach(eprocess);
+			if (eprocess.IsAttached())
 			{
-				CEProcess eprocess(m_processId);
-				CAutoEProcessAttach attach(eprocess);
-				if (eprocess.IsAttached())
-					CMMU::SetInvalid(mem2watch, size);//if not accessed then not set ...
+				if (SYSCALL_SET_MEMORY_BP == syscallId)
+				{
+					if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags)))
+						CMMU::SetInvalid(mem2watch, size);//if not accessed then not set ...
+				}
+				else
+				{
+					if (m_mem2watch.Pop(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags)))
+						CMMU::SetValid(mem2watch, size);//if not accessed then not set ...
+				}
 			}
 		}
 		return true;
@@ -279,6 +284,7 @@ bool CProcess2Fuzz::DbiEnumThreads(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
+	CApcLvl irql;
 	CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(CID_ENUM));
 	CID_ENUM* cid = static_cast<CID_ENUM*>(auto_cid.WritePtrUser());
 	if (cid)
@@ -331,6 +337,7 @@ bool CProcess2Fuzz::DbiEnumModules(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
+	CApcLvl irql;
 	CMdl auto_module(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MODULE_ENUM));
 	MODULE_ENUM* module = static_cast<MODULE_ENUM*>(auto_module.WritePtrUser());
 	if (module)
@@ -361,6 +368,7 @@ bool CProcess2Fuzz::DbiGetProcAddress(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
+	CApcLvl irql;
 	CMdl auto_api_param(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(PARAM_API));
 	PARAM_API* api_param = static_cast<PARAM_API*>(auto_api_param.WritePtr());
 	if (api_param)
@@ -388,6 +396,7 @@ bool CProcess2Fuzz::DbiEnumMemory(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
+	CApcLvl irql;
 	CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(MEMORY_ENUM));
 	MEMORY_ENUM* mem = static_cast<MEMORY_ENUM*>(auto_mem.WritePtrUser());
 
@@ -415,6 +424,7 @@ bool CProcess2Fuzz::DbiDumpMemory(
 	PARAM_MEMCOPY params;
 	if (ReadParamBuffer<PARAM_MEMCOPY>(reg, &params))
 	{
+		CApcLvl irql;
 		CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
 		void* dst = mdl_dbg.WritePtr();
 		if (dst)
@@ -444,6 +454,7 @@ bool CProcess2Fuzz::DbiPatchMemory(
 	PARAM_MEMCOPY params;
 	if (ReadParamBuffer<PARAM_MEMCOPY>(reg, &params))
 	{
+		CApcLvl irql;
 		CMdl mdl_mntr(params.Src.Value, params.Size.Value);
 		const void* src = mdl_mntr.ReadPtr();
 		if (src)
@@ -480,7 +491,7 @@ bool CProcess2Fuzz::Syscall(
 	reg[RSP] = (ULONG_PTR)(get_ring3_rsp() - 2);
 
 	bool status = false;
-	switch ((ULONG)reg[SYSCALL_ID])//DBI_ACTION
+	switch (static_cast<ULONG>(reg[SYSCALL_ID]))//DBI_ACTION
 	{
 //tracer
 	case SYSCALL_INIT:
@@ -501,16 +512,18 @@ bool CProcess2Fuzz::Syscall(
 
 //'hooks' - tracer callbacks
 	case SYSCALL_SET_MEMORY_BP:
+	case SYSCALL_UNSET_MEMORY_BP:
 		if (m_processId != PsGetCurrentProcessId())
-			status = DbiSetMemoryBreakpoint(reg);
+			status = DbiSetMemoryBreakpoint(reg, static_cast<ULONG>(reg[SYSCALL_ID]));
 		else//ERROR
 			KeBreak();
 
 		break;
 
 	case SYSCALL_SET_ADDRESS_BP:
+	case SYSCALL_UNSET_ADDRESS_BP:
 		if (m_processId != PsGetCurrentProcessId())
-			status = DbiSetAddressBreakpoint(reg);
+			status = DbiSetAddressBreakpoint(reg, static_cast<ULONG>(reg[SYSCALL_ID]));
 		else//ERROR
 			KeBreak();
 

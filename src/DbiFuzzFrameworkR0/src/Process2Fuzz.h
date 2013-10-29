@@ -114,12 +114,14 @@ private:
 //'hooks' - tracer callbacks
 	__checkReturn
 	bool DbiSetAddressBreakpoint(
-		__inout ULONG_PTR reg[REG_COUNT]
+		__inout ULONG_PTR reg[REG_COUNT],
+		__in ULONG syscallId
 		);
 
 	__checkReturn
 	bool DbiSetMemoryBreakpoint(
-		__inout ULONG_PTR reg[REG_COUNT]
+		__inout ULONG_PTR reg[REG_COUNT],
+		__in ULONG syscallId
 		);
 
 //threads walker

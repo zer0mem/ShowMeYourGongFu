@@ -21,10 +21,10 @@ public:
 	{
 		ULONG_PTR ring0rsp = reg[RSP];
 		//-2 == simulating push ebp, pushfq to copy state as in reg[REG_COUNT]
-		reg[RSP] = (ULONG_PTR)(get_ring3_rsp() - 2);
+		reg[RSP] = reinterpret_cast<ULONG_PTR>(get_ring3_rsp() - 2);
 
 		bool status = false;
-		switch ((ULONG)reg[RAX])
+		switch (static_cast<ULONG>(reg[RAX]))
 		{
 		case ntdll_NtAllocateVirtualMemory:
 			status = NtAllocateVirtualMemory(reg);

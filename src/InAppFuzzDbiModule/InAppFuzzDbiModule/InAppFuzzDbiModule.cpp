@@ -128,10 +128,28 @@ void DbiSetHook(
 }
 
 EXTERN_C __declspec(dllexport) 
-void DbiWatchMemoryAccess(
+	void DbiWatchMemoryAccess(
 	__in HANDLE procId,
 	__inout PARAM_MEM2WATCH* dbiParams
 	)
 {
 	FastCallMonitor(SYSCALL_SET_MEMORY_BP, procId, 0, dbiParams);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiUnsetAddressBreakpoint(
+	__in HANDLE procId,
+	__inout PARAM_HOOK* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_UNSET_ADDRESS_BP, procId, 0, dbiParams);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiUnsetMemoryBreakpoint(
+	__in HANDLE procId,
+	__inout PARAM_MEM2WATCH* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_UNSET_MEMORY_BP, procId, 0, dbiParams);
 }

@@ -56,6 +56,7 @@ protected:
  * III. tests
  */
 
+//imeplemntation of Virtual Memory syscalls callbacks
 	virtual bool NtAllocateVirtualMemory(
 		__inout ULONG_PTR reg[REG_COUNT]
 	) override

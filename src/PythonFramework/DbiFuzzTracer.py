@@ -26,9 +26,15 @@ class CDbiFuzzTracer(CCpu):
 
         self.DbiSetHook = self.comm.DbiSetHook#pid, PARAM_HOOK
         self.DbiSetHook.argtypes = [c_ulonglong, POINTER(PARAM_HOOK)]
+        
+        self.DbiUnsetAddressBreakpoint = self.comm.DbiUnsetAddressBreakpoint#pid, PARAM_HOOK
+        self.DbiUnsetAddressBreakpoint.argtypes = [c_ulonglong, POINTER(PARAM_HOOK)]
 
         self.DbiWatchMemoryAccess = self.comm.DbiWatchMemoryAccess#pid, PARAM_MEM2WATCH
         self.DbiWatchMemoryAccess.argtypes = [c_ulonglong, POINTER(PARAM_MEM2WATCH)]
+        
+        self.DbiUnsetMemoryBreakpoint = self.comm.DbiUnsetMemoryBreakpoint#pid, PARAM_MEM2WATCH
+        self.DbiUnsetMemoryBreakpoint.argtypes = [c_ulonglong, POINTER(PARAM_MEM2WATCH)]
 
         self.DbiEnumMemory = self.comm.DbiEnumMemory#pid, MEMORY_ENUM
         self.DbiEnumMemory.argtypes = [c_ulonglong, POINTER(MEMORY_ENUM)]
@@ -71,25 +77,47 @@ class CDbiFuzzTracer(CCpu):
     def GetIp(self):
         return self.__Context__().TraceInfo.StateInfo.IRet.Return
     
+    def GetPrevIp(self):
+        return self.__Context__().TraceInfo.PrevIp
+
+    def __Step(self):
+        self.SmartTrace(self.m_cid.ProcId, self.m_cid.ThreadId, pointer(self.__Context__()))
+
+        #in multithreading tracer -> need to 'freeze' this thread if it is not its event
+        #and wait for thread which have setted this address/memory breakpoint
+        #'freeze' means get callback to tracer to given thread with signalized state that
+        #this is not its own breakpoint! and not unset it!!!
+        #unset this breakpoint should only thread for what is this breakpoint supposed ...!
+        print("reason : ", self.__Context__().TraceInfo.Reason)
+        if (Hook == self.__Context__().TraceInfo.Reason):            
+            hook = PARAM_HOOK(self.GetIp())
+            self.DbiUnsetAddressBreakpoint(self.m_cid.ProcId, pointer(hook))
+            print("ADRESS HOOK")
+        elif (MemoryAccess == self.__Context__().TraceInfo.Reason):            
+            mem2watch = PARAM_MEM2WATCH(self.__Context__().MemoryInfo.Begin, self.__Context__().MemoryInfo.Size - 1)
+            print(hex(self.__Context__().MemoryInfo.OriginalValue), " <--- original value")
+            self.DbiUnsetMemoryBreakpoint(self.m_cid.ProcId, pointer(mem2watch))
+            print("MEMORY HOOK")
+            
+        return self.__Context__().TraceInfo.StateInfo.IRet.Return
+    
     def Go(self, ip):
         self.__Context__().TraceInfo.StateInfo.IRet.Flags &= ~0x100
         self.__Context__().TraceInfo.StateInfo.IRet.Return = ip
-        self.SmartTrace(self.m_cid.ProcId, self.m_cid.ThreadId, pointer(self.__Context__()))
-        return self.__Context__().TraceInfo.StateInfo.IRet.Return
+        self.__Context__().TraceInfo.Btf = 0
+        return self.__Step()
         
     def SingleStep(self, ip):
         self.__Context__().TraceInfo.StateInfo.IRet.Flags |= 0x100
         self.__Context__().TraceInfo.StateInfo.IRet.Return = ip
-        self.__Context__().TraceInfo.Bft = 0
-        self.SmartTrace(self.m_cid.ProcId, self.m_cid.ThreadId, pointer(self.__Context__()))
-        return self.__Context__().TraceInfo.StateInfo.IRet.Return
+        self.__Context__().TraceInfo.Btf = 0
+        return self.__Step()
         
     def BranchStep(self, ip):
         self.__Context__().TraceInfo.StateInfo.IRet.Flags |= 0x100
         self.__Context__().TraceInfo.StateInfo.IRet.Return = ip
-        self.__Context__().TraceInfo.Bft = 1
-        self.SmartTrace(self.m_cid.ProcId, self.m_cid.ThreadId, pointer(self.__Context__()))
-        return self.__Context__().TraceInfo.StateInfo.IRet.Return
+        self.__Context__().TraceInfo.Btf = 1
+        return self.__Step()
         
 #thread non-specific == affect all threads! -> should be implemented as thread specific!!!
     def SetAddressBreakpoint(self, ip):
@@ -157,102 +185,3 @@ class CDbiFuzzTracer(CCpu):
             ptr |= (buff[i] << (8 * i))
         return ptr
         
-def main(pid):
-    print("main start {")
-
-    tracer = CDbiFuzzTracer(pid)
-
-    tid = 0
-    for i in range(0, 0x10):
-        tid = tracer.GetNextThread(tid)
-        if (not tid):
-            print("threads count reached")
-            break
-        print("tid : ", hex(tid))
-
-    img = tracer.NextModule(0)
-    for i in range(0, 0x10):
-        print(img.ImageName, " ", hex(img.Begin), " ", hex(img.Size), " ", img.Is64)
-        
-        img = tracer.NextModule(img.Begin)
-        if (img == None):
-            print("modules count reached")
-            break
-
-    kernel32 = tracer.GetModule("kernel32").Begin
-    ll = tracer.GetProcAddress("kernel32", "LoadLibraryA")
-    print("proc addr : ", hex(ll), " [ ", hex(kernel32), " ]")
-
-    buff = tracer.ReadMemory(kernel32, 0x100)
-    for i in range(0, 0x4):
-        print(hex(buff[i]))
-        buff[i] += 1
-
-    #tracer.WriteMemory(kernel32, buff, 0x100)
-    
-    buff2 = tracer.ReadMemory(kernel32, 0x100)
-    for i in range(0, 0x4):
-        print(hex(buff2[i]))
-
-    mem = tracer.NextMemory(0)
-    for i in range(0, 0x10):
-        print(hex(mem.Begin), " ", hex(mem.Size), " ", hex(mem.Flags))
-        
-        mem = tracer.NextMemory(mem.Begin)
-        if (mem == None):
-            print("memory chunks count reached")
-            break
-        
-    print("shit")
-    mem = tracer.NextMemory(kernel32)
-    for i in range(0, 0x10):
-        print(hex(mem.Begin), " ", hex(mem.Size), " ", hex(mem.Flags))
-        
-        mem = tracer.NextMemory(mem.Begin)
-        if (mem == None):
-            print("memory chunks count reached")
-            break
-        
-    print(hex(tracer.GetIp()))
-    tracer.SingleStep(tracer.GetIp())
-    print(hex(tracer.GetIp()))
-    tracer.SingleStep(tracer.GetIp())
-    print(hex(tracer.GetIp()))
-        
-    for i in range(0, 10):
-        print("next round")
-        
-        tracer.SetMemoryBreakpoint(0x2340000, 0x400)
-        tracer.Go(tracer.GetIp())
-        
-        print(hex(tracer.GetIp()))
-        tracer.SingleStep(tracer.GetIp())
-        print(hex(tracer.GetIp()))
-        
-    return
-        
-    mmodule = tracer.GetModule("codecoverme")
-    print(hex(mmodule.Begin), hex(mmodule.Size))
-    
-    for i in range(0, 0xFFFFFF):
-        if (mmodule.Begin > tracer.GetIp() or mmodule.Begin + mmodule.Size < tracer.GetIp()):            
-            tracer.SetAddressBreakpoint(tracer.ReadPtr(tracer.GetRsp()))
-            tracer.Go(tracer.GetIp())
-            print("HOOKED")
-        tracer.BranchStep(tracer.GetIp())
-        print(hex(tracer.GetIp()))
-
-    print("} main pre-finish")
-    return
-        
-    for i in range(0, 4):
-        tracer.BranchStep(tracer.GetIp())
-        print(hex(tracer.GetIp()))
-        tracer.SetAddressBreakpoint(tracer.GetIp())
-        tracer.Go(tracer.GetIp())
-        
-    tracer.Go(tracer.GetIp())
-    
-    print("} main finish")
-                        
-main(0xc30)

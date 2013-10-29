@@ -92,6 +92,7 @@ public:
 	{
 		const void* func_addr = NULL;
 
+		CApcLvl rql;
 		CMdl image_map(base, PAGE_SIZE);
 		const void* img_base = image_map.ReadPtrUser();
 		if (img_base)

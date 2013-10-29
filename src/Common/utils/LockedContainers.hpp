@@ -47,12 +47,8 @@ public:
 		)
 	{
 		SPIN_LOCK
-		while (true)
-		{
-			if (!m_avl.Remove(&element))
-				return false;
-		}
-		return true;
+		while (m_avl.Remove(&element));
+		return !m_avl.Find(&element);
 	}
 
 	__checkReturn

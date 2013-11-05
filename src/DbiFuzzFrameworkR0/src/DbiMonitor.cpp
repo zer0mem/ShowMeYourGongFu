@@ -74,7 +74,7 @@ bool CDbiMonitor::SetVirtualizationCallbacks()
 	m_traps[VMX_EXIT_EXCEPTION] = reinterpret_cast<ULONG_PTR>(VMMEXCEPTION);
 
 	//disable patchguard
-	RegisterCallback(m_callbacks, AntiPatchGuard);
+	//RegisterCallback(m_callbacks, AntiPatchGuard);
 
 	return RegisterCallback(m_callbacks, VMMCPUID);
 }
@@ -289,6 +289,7 @@ void CDbiMonitor::VMMEXCEPTION(
 		//is user mode ?
 		if (IsUserModeAddress(vmm_exit.GetIp()))
 		{
+			vmm_exit.SetIp(reinterpret_cast<const BYTE*>(vmm_exit.GetIp()) - vmm_exit.GetInsLen());
 			ULONG_PTR msr_btf_part;
 			if (!vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part))
 			{

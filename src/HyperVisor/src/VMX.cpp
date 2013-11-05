@@ -175,6 +175,7 @@ bool CVmx::VmcsInit()
 #else
 		unsigned long mask = BTS(TRAP_debug) | BTS(TRAP_int3);// | BTS(TRAP_page_fault);
 #endif
+
 		intercepts |= mask;
 		vmwrite(VMX_VMCS_CTRL_EXCEPTION_BITMAP, intercepts);
 	}
@@ -226,7 +227,7 @@ bool CVmx::GetGuestState(
 	KeSetSystemAffinityThread(procId);
 
 	m_guestState.CR0 = (readcr0() & rdmsr(IA32_VMX_CR0_FIXED1)) | rdmsr(IA32_VMX_CR0_FIXED0) | CR0_PE | CR0_NE | CR0_PG;
-	m_guestState.CR4 = (readcr4() & rdmsr(IA32_VMX_CR4_FIXED1)) | rdmsr(IA32_VMX_CR4_FIXED0) | CR4_VMXE;
+	m_guestState.CR4 = (readcr4() & rdmsr(IA32_VMX_CR4_FIXED1)) | rdmsr(IA32_VMX_CR4_FIXED0) | CR4_VMXE | CR4_DE;
 
 	m_guestState.CR3 = readcr3();
 	m_guestState.RFLAGS = readeflags();
@@ -239,7 +240,7 @@ bool CVmx::GetGuestState(
 	m_guestState.Gs = readgs();
 
 	m_guestState.PIN = (PBYTE)(rdmsr(IA32_VMX_PINBASED_CTLS) & SEG_D_LIMIT);
-	m_guestState.PROC = (PBYTE)(rdmsr(IA32_VMX_PROCBASED_CTLS) & SEG_D_LIMIT);
+	m_guestState.PROC = (PBYTE)((rdmsr(IA32_VMX_PROCBASED_CTLS) & SEG_D_LIMIT) | CPU_BASED_RDTSC_EXITING /*| CPU_BASED_MOV_DR_EXITING*/);
 	m_guestState.EXIT = (PBYTE)((rdmsr(IA32_VMX_EXIT_CTLS) & SEG_D_LIMIT | (1 << 15)) | VMX_VMCS32_EXIT_IA32E_MODE | VMX_VMCS32_EXIT_ACK_ITR_ON_EXIT);
 	m_guestState.ENTRY = (PBYTE)((rdmsr(IA32_VMX_ENTRY_CTLS)& SEG_D_LIMIT) | VMX_VMCS32_ENTRY_IA32E_MODE);
 	m_guestState.SEIP = (PBYTE)(rdmsr(IA64_SYSENTER_EIP) & SEG_D_LIMIT);
@@ -279,7 +280,7 @@ void CVmx::SetCRx()
 	vmwrite(VMX_VMCS64_GUEST_CR0, m_guestState.CR0);	
 	vmwrite(VMX_VMCS64_GUEST_CR3, m_guestState.CR3);
 	vmwrite(VMX_VMCS64_GUEST_CR4, m_guestState.CR4);
-	vmwrite(VMX_VMCS64_GUEST_DR7, 0x400);
+	vmwrite(VMX_VMCS64_GUEST_DR7, 0x400 | DR7_GD);
 
 	//CR HOST
 	vmwrite(VMX_VMCS_HOST_CR0, m_guestState.CR0);
@@ -302,7 +303,7 @@ void CVmx::SetDT()
 	vmwrite(VMX_VMCS64_GUEST_GDTR_BASE, m_guestState.Gdtr.base);
 	vmwrite(VMX_VMCS32_GUEST_GDTR_LIMIT, m_guestState.Gdtr.limit);	
 
-	vmwrite(VMX_VMCS_HOST_FS_BASE, rdmsr(IA32_FS_BASE)&SEG_Q_LIMIT);
+	vmwrite(VMX_VMCS_HOST_FS_BASE, rdmsr(IA32_FS_BASE) & SEG_Q_LIMIT);
 	SEGMENT_SELECTOR seg_sel;
 	GetSegmentDescriptor(&seg_sel, m_guestState.Tr);
 	vmwrite(VMX_VMCS_HOST_TR_BASE, seg_sel.base);
@@ -312,12 +313,12 @@ void CVmx::SetDT()
 
 void CVmx::SetSysCall()
 {
-	vmwrite(VMX_VMCS32_GUEST_SYSENTER_CS,rdmsr(IA32_SYSENTER_CS) & SEG_D_LIMIT);
+	vmwrite(VMX_VMCS32_GUEST_SYSENTER_CS, rdmsr(IA32_STAR) & SEG_D_LIMIT);
 	vmwrite(VMX_VMCS64_GUEST_SYSENTER_ESP, m_guestState.SESP);
 	vmwrite(VMX_VMCS64_GUEST_SYSENTER_EIP, m_guestState.SEIP);
 
 
-	vmwrite(VMX_VMCS32_HOST_SYSENTER_CS, rdmsr(IA32_SYSENTER_CS) & SEG_D_LIMIT);
+	vmwrite(VMX_VMCS32_HOST_SYSENTER_CS, rdmsr(IA32_STAR) & SEG_D_LIMIT);
 	vmwrite(VMX_VMCS_HOST_SYSENTER_EIP, m_guestState.SEIP);
 	vmwrite(VMX_VMCS_HOST_SYSENTER_ESP, m_guestState.SESP);
 }
@@ -367,7 +368,7 @@ void CVmx::VmcsToRing0()
 	//set guest CR
 	vmwrite(VMX_VMCS64_GUEST_CR0, m_guestState.CR0);
 	vmwrite(VMX_VMCS64_GUEST_CR4, m_guestState.CR4);
-	vmwrite(VMX_VMCS64_GUEST_DR7, 0x400);
+	vmwrite(VMX_VMCS64_GUEST_DR7, 0x400 | DR7_GD/* | DR7_ENABLED_MASK*/);
 
 	//set descriptor tables
 	vmwrite(VMX_VMCS64_GUEST_IDTR_BASE, m_guestState.Idtr.base);

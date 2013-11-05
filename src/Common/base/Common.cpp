@@ -6,6 +6,7 @@
 #include "stdafx.h"
 
 #include "Common.h"
+#include "../utils/Range.h"
 
 __checkReturn
 const WCHAR* wcschrn( 
@@ -33,4 +34,20 @@ void InitUnicodeSubstring(
 {
 	ustr->Length = ustr->MaximumLength = (USHORT)(count * sizeof(WCHAR));
 	ustr->Buffer = (PWCH)(wsubstr);
+}
+
+__checkReturn
+bool IsUserModeAddress(
+	__in const void* addr
+	)
+{
+	return CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(addr);
+}
+
+__checkReturn
+bool IsUserModeAddress(
+	__in ULONG_PTR addr
+	)
+{
+	return IsUserModeAddress(reinterpret_cast<const void*>(addr));
 }

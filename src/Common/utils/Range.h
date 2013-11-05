@@ -36,7 +36,14 @@ public:
 		__in const TYPE* address
 		) const
 	{
-		return (reinterpret_cast<ULONG_PTR>(address) >= m_begin && reinterpret_cast<ULONG_PTR>(address) <= m_end);
+		return IsInRange(reinterpret_cast<ULONG_PTR>(address));
+	};
+
+	bool IsInRange(
+		__in ULONG_PTR address
+		) const
+	{
+		return (address >= m_begin && address <= m_end);
 	};
 
 	void Set(

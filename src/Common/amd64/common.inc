@@ -122,9 +122,11 @@ ENTER_HOOK macro hook
 	call hook
 	popptr
 
-	mov [rsp + 07h * sizeof(qword)], rax
+	;mov [rsp + 07h * sizeof(qword)], rax
+	mov [rsp + (010h + 1) * sizeof(qword)], rax
 	popaq
 	popfq
+	xchg [rsp], rax;bullshit due fix, TODO, remove + fix usage rax after ENTER_HOOK !!
 endm
 
 ENTER_HOOK_EPILOGUE macro

@@ -38,6 +38,16 @@ const WCHAR* wcschrn(
 	__in_opt bool reverse = false
 	);
 
+__checkReturn
+bool IsUserModeAddress(
+	__in const void* addr
+	);
+
+__checkReturn
+bool IsUserModeAddress(
+	__in ULONG_PTR addr
+	);
+
 #ifdef _WIN64
 
 EXTERN_C void __kebreak();
@@ -80,76 +90,6 @@ __inline void KeBreak()
 
 #define SECONDS(seconds) \
 	(((signed __int64)(seconds)) * MILLISECONDS(1000L))
-
-//-----------------------------------------------------
-// ****************** WORK WITH REGS ******************
-//-----------------------------------------------------
-
-class CRegXType
-{
-public:
-	CRegXType(
-		__in bool is64,
-		__in void* regs
-		) : m_is64(is64),
-			m_regs(regs)
-	{
-	}
-
-	ULONG_PTR GetRAX() { return GetReg(RAX); }
-	ULONG_PTR GetRBX() { return GetReg(RBX); }
-	ULONG_PTR GetRCX() { return GetReg(RCX); }
-	ULONG_PTR GetRDX() { return GetReg(RDX); }
-	ULONG_PTR GetRSI() { return GetReg(RSI); }
-	ULONG_PTR GetRDI() { return GetReg(RDI); }
-	ULONG_PTR GetRBP() { return GetReg(RBP); }
-	ULONG_PTR GetRSP() { return GetReg(RSP); }
-	ULONG_PTR GetFLAGS() { return GetReg(m_is64 ? REG_X64_COUNT : REG_X86_COUNT); }
-
-	void SetRAX(__in ULONG_PTR regVal) { SetReg(RAX, regVal); }
-	void SetRBX(__in ULONG_PTR regVal) { SetReg(RBX, regVal); }
-	void SetRCX(__in ULONG_PTR regVal) { SetReg(RCX, regVal); }
-	void SetRDX(__in ULONG_PTR regVal) { SetReg(RDX, regVal); }
-	void SetRSI(__in ULONG_PTR regVal) { SetReg(RSI, regVal); }
-	void SetRDI(__in ULONG_PTR regVal) { SetReg(RDI, regVal); }
-	void SetRBP(__in ULONG_PTR regVal) { SetReg(RBP, regVal); }
-	void SetRSP(__in ULONG_PTR regVal) { SetReg(RSP, regVal); }
-	void SetFLAGS(__in ULONG_PTR flags) { SetReg(m_is64 ? REG_X64_COUNT : REG_X86_COUNT, flags); }
-
-	void SetReg(
-		__in size_t regId,
-		__in ULONG_PTR regVal
-		)
-	{
-		if (m_is64)
-		{
-			((reinterpret_cast<ULONG64*>(m_regs))[regId]) = (ULONG64)regVal;
-		}
-		else if (regId < REG_X86_COUNT)
-		{
-			((reinterpret_cast<ULONG*>(m_regs))[regId]) = (ULONG)regVal;
-		}
-	}
-
-	ULONG_PTR GetReg(
-		__in size_t regId
-		)
-	{
-		if (m_is64)
-		{
-			return (ULONG_PTR)((reinterpret_cast<ULONG64*>(m_regs))[regId]);
-		}
-		else if (regId <= REG_X86_COUNT)//== REG_X86_COUNT => flags
-		{
-			return (ULONG_PTR)((reinterpret_cast<ULONG*>(m_regs))[regId]);
-		}
-		return 0;
-	}
-
-protected:
-	bool m_is64;
-	void* m_regs;
-};
 
 
 #endif // _COMMON_H

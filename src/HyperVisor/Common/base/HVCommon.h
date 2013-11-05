@@ -37,6 +37,25 @@ struct SEGMENT_DESCRIPTOR
 	ULONG_PTR BaseHigh : 8;
 };
 
+//SEGMENT_DESCRIPTOR.Attributes (-Gap)...
+typedef union
+{
+	USHORT UCHARs;
+	struct FIELDS
+	{
+		USHORT type:4;              /* 0;  Bit 40-43 */
+		USHORT s:1;                 	/* 4;  Bit 44 */
+		USHORT dpl:2;               	/* 5;  Bit 45-46 */
+		USHORT p:1;                 	/* 7;  Bit 47 */
+		// gap!   (this will be explained later)     
+		USHORT avl:1;               	/* 8;  Bit 52 */
+		USHORT l:1;                 	/* 9;  Bit 53 */
+		USHORT db:1;                	/* 10; Bit 54 */
+		USHORT g:1;                 	/* 11; Bit 55 */
+		USHORT Gap:4;
+	};
+} SEGMENT_ATTRIBUTES;
+
 struct SEGMENT_SELECTOR
 {
 	ULONG_PTR selector;
@@ -106,10 +125,11 @@ struct GUEST_STATE
 #define	IS_GRANULARITY_4KB		0xB
 
 #define BTS(b)					(1 << b)
-#define CR4_VMXE				(ULONG)BTS(13)
-#define CR0_PG					(ULONG)BTS(31)
-#define CR0_NE					(ULONG)BTS(5)
-#define CR0_PE					(ULONG)BTS(0)
+#define CR4_VMXE				static_cast<ULONG>(BTS(13))
+#define CR4_DE					static_cast<ULONG>(BTS(3))
+#define CR0_PG					static_cast<ULONG>(BTS(31))
+#define CR0_NE					static_cast<ULONG>(BTS(5))
+#define CR0_PE					static_cast<ULONG>(BTS(0))
 
 #define FEATURE_CONTROL_LOCKED			BTS(0)
 #define FEATURE_CONTROL_VMXON_ENABLED	BTS(2)

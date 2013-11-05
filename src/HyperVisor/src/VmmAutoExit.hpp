@@ -25,8 +25,8 @@ public:
 			if (!vmread(VMX_VMCS64_GUEST_RIP, &m_ip))
 				if (!vmread(VMX_VMCS64_GUEST_RSP, &m_sp))
 					if (!vmread(VMX_VMCS_GUEST_RFLAGS, &m_flags))
-						if (!vmread(VMX_VMCS32_RO_EXIT_INSTR_LENGTH, &m_insLen))
-							m_ip = static_cast<const BYTE*>(m_ip) - m_insLen;
+						if (!vmread(VMX_VMCS32_RO_EXIT_REASON, &m_reason))
+							vmread(VMX_VMCS32_RO_EXIT_INSTR_LENGTH, &m_insLen);
 	}
 
 	__forceinline
@@ -64,6 +64,14 @@ public:
 	}
 
 	__forceinline
+	void SetIpFromCallback(
+		__in const void* ip
+		)
+	{
+		m_ip = static_cast<const BYTE*>(ip) - m_insLen;
+	}
+
+	__forceinline
 	ULONG_PTR* GetSp()
 	{
 		return m_sp;
@@ -95,12 +103,19 @@ public:
 		return static_cast<BYTE>(m_intInfo);
 	}
 
+	__forceinline
+	ULONG_PTR GetReason()
+	{
+		return m_reason;
+	}
+
 protected:
 	const void* m_ip;
 	size_t m_insLen;
 	ULONG_PTR* m_sp;
 	ULONG_PTR m_flags;
 	ULONG_PTR m_intInfo;
+	ULONG_PTR m_reason;
 };
 
 #endif //__VMMAUTOEXIT_H__

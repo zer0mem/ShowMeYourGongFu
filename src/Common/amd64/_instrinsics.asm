@@ -97,7 +97,7 @@ __nop proc
 __nop endp
 
 __x64_cpuid proc
-    mov rax,rcx
+    mov rax, rcx
     cpuid
     ret
 __x64_cpuid endp

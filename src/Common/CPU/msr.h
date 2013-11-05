@@ -17,7 +17,12 @@
 #define IA32_FS_BASE							0xC0000100
 #define IA32_GS_BASE							0xC0000101
 #define IA64_SYSENTER_EIP                       0xC0000082
+#define IA32_STAR								0xc0000081
+#define IA32_FMASK								0xc0000084
 
+#define IA32_TIME_STAMP_COUNTER	0x10
+
+//HW specific ...
 #define MSR_LASTBRANCH_0_FROM_IP 0x40
 #define MSR_LASTBRANCH_0_TO_IP 0x60
 #define MSR_LASTBRANCH_TOS 0x1C9

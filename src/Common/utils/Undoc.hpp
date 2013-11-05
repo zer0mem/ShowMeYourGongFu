@@ -40,7 +40,12 @@ public:
 		__in size_t vadRightChild,
 		__in size_t vadStartingVpn,
 		__in size_t vadEndingVpn,
-		__in size_t vadFlags
+		__in size_t vadFlags,
+		__in size_t deallocationStack32,
+		__in size_t deallocationStack64,
+		__in size_t pKTIMER,
+		__in size_t patchGuardContextStackTopDelta,
+		__in ULONG_PTR patchGuardMagic
 		)
 	{
 		m_eprocessVadRoot = eprocessVadRoot;
@@ -61,6 +66,13 @@ public:
 		m_vadStartingVpn = vadStartingVpn;
 		m_vadEndingVpn = vadEndingVpn;
 		m_vadFlags = vadFlags;
+		
+		m_deallocationStack32 = deallocationStack32;
+		m_deallocationStack64 = deallocationStack64;
+
+		m_pKTIMER = pKTIMER;
+		m_patchGuardContextStackTopDelta = patchGuardContextStackTopDelta;
+		m_patchGuardMagic = patchGuardMagic;
 
 		m_initialized = true;
 	}
@@ -170,9 +182,34 @@ public:
 	ULONG_PTR* DeallocationStack(__in const TYPE* teb)
 	{
 		if (sizeof(TYPE) == sizeof(NT_TIB32))
-			return reinterpret_cast<ULONG_PTR*>((ULONG_PTR)teb + 0xE0C);
+			return reinterpret_cast<ULONG_PTR*>((ULONG_PTR)teb + m_deallocationStack32);
 		else
-			return reinterpret_cast<ULONG_PTR*>((ULONG_PTR)teb + 0x1478);
+			return reinterpret_cast<ULONG_PTR*>((ULONG_PTR)teb + m_deallocationStack64);
+	}
+
+	__forceinline
+	static 
+	KTIMER* PatchGuardGetPKTIMER( 
+		__in ULONG_PTR contextAddr 
+		) 
+	{
+		return *reinterpret_cast<KTIMER**>(contextAddr + m_pKTIMER);//0x330
+	}
+
+	__forceinline
+	static 
+	size_t PatchGuardContextStackTopDelta() 
+	{
+		return m_patchGuardContextStackTopDelta;//0x7D0
+	}
+
+	__forceinline
+	static 
+	bool IsPatchGuardContextOnRTDSC(
+		__in const ULONG_PTR reg[REG_COUNT]
+		) 
+	{
+		return (reg[RSI] == m_patchGuardMagic);//0x7010008004002001
 	}
 
 protected:
@@ -197,7 +234,24 @@ private:
 	static size_t m_vadStartingVpn;
 	static size_t m_vadEndingVpn;
 	static size_t m_vadFlags;
+
+	static size_t m_deallocationStack32;
+	static size_t m_deallocationStack64;
+
+	static size_t m_pKTIMER;
+	static size_t m_patchGuardContextStackTopDelta;
+	static ULONG_PTR m_patchGuardMagic;
 };
+
+__declspec(selectany) ULONG_PTR CUndoc::m_patchGuardMagic;
+
+__declspec(selectany) size_t CUndoc::m_patchGuardContextStackTopDelta;
+
+__declspec(selectany) size_t CUndoc::m_pKTIMER;
+
+__declspec(selectany) size_t CUndoc::m_deallocationStack64;
+
+__declspec(selectany) size_t CUndoc::m_deallocationStack32;
 
 __declspec(selectany) size_t CUndoc::m_vadFlags;
 

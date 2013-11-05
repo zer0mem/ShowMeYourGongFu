@@ -141,7 +141,7 @@ bool CProcess2Fuzz::PageFault(
 						fuzz_thread->SmartTraceEvent(reg, trace_info, pf_iret);
 
 						//push back to trace_info queue
-						CDbiMonitor::m_branchInfoQueue.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info_container));
+						CDbiMonitor::m_branchInfoStack.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info_container));
 						//handle branch tracing - callback from HV
 						pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
 
@@ -153,8 +153,11 @@ bool CProcess2Fuzz::PageFault(
 
 			// { ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 			CMemoryRange* mem;
-			if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem))//bullshit, what if another thread raise to this point ??
+			if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem))
 			{
+				if (!IsUserModeAddress(pf_iret->IRet.Return))
+					KeBreak();//TODO -> doimplement touching monitored memory by kernel
+
 				fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret);
 				pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
 				return true;
@@ -463,7 +466,6 @@ bool CProcess2Fuzz::DbiPatchMemory(
 			CAutoEProcessAttach attach(eprocess);
 			if (eprocess.IsAttached())
 			{
-				KeBreak();
 				CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
 				void* dst = mdl_dbg.ForceWritePtrUser();
 				if (dst)

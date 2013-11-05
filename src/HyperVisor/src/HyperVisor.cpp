@@ -42,6 +42,9 @@ CHyperVisor::CHyperVisor(
 				case VMX_EXIT_CPUID:
 					m_hvCallbacks[i] = CPUID;
 					break;
+				case VMX_EXIT_RDTSC:
+					m_hvCallbacks[i] = RDTSC;
+					break;
 				default:
 					m_hvCallbacks[i] = DUMMY;
 				}

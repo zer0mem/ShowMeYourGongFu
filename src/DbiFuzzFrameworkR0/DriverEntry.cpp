@@ -43,7 +43,12 @@ void EnviromentDependentVariablesInit()
 		(offsetof(_MMVAD_SHORT, VadNode) + offsetof(_MM_AVL_NODE, RightChild)),
 		offsetof(_MMVAD_SHORT, StartingVpn), 
 		offsetof(_MMVAD_SHORT, EndingVpn),
-		offsetof(_MMVAD_SHORT, Flags)
+		offsetof(_MMVAD_SHORT, Flags),
+		0xE0C,
+		0x1478,		
+		0x330,
+		0x7D0,
+		0x7010008004002001
 		);
 
 	/*

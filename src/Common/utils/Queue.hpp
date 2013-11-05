@@ -9,17 +9,17 @@
 #include "../base/Common.h"
 
 template<class TYPE>
-struct QUEUE_ENTRY
+struct STACK_ENTRY
 {
 	SLIST_ENTRY Next;
 	TYPE Value;
 };
 
 template<class TYPE>
-class CQueue
+class CStack
 {
 public:
-	~CQueue()
+	~CStack()
 	{
 		TYPE* entry;
 		while (entry = Pop())
@@ -30,7 +30,7 @@ public:
 	TYPE* Create()
 	{
 		//malloc is aligned - NonPagedPoolCacheAlignedMustS
-		QUEUE_ENTRY<TYPE>* entry = reinterpret_cast<QUEUE_ENTRY<TYPE>*>(malloc(sizeof(QUEUE_ENTRY<TYPE>)));
+		STACK_ENTRY<TYPE>* entry = reinterpret_cast<STACK_ENTRY<TYPE>*>(malloc(sizeof(STACK_ENTRY<TYPE>)));
 		return entry ? &entry->Value : NULL;
 	}
 
@@ -38,20 +38,20 @@ public:
 		__in TYPE* entry
 		)
 	{
-		delete CONTAINING_RECORD(entry, QUEUE_ENTRY<TYPE>, Value);
+		delete CONTAINING_RECORD(entry, STACK_ENTRY<TYPE>, Value);
 	}
 
 	void Push(
 		__in TYPE* entry
 		)
 	{
-		InterlockedPushEntrySList(&m_head, &(CONTAINING_RECORD(entry, QUEUE_ENTRY<TYPE>, Value)->Next));
+		InterlockedPushEntrySList(&m_head, &(CONTAINING_RECORD(entry, STACK_ENTRY<TYPE>, Value)->Next));
 	}
 
 	__checkReturn
 	TYPE* Pop()
 	{
-		QUEUE_ENTRY<TYPE>* entry = reinterpret_cast<QUEUE_ENTRY<TYPE>*>(InterlockedPopEntrySList(&m_head));
+		STACK_ENTRY<TYPE>* entry = reinterpret_cast<STACK_ENTRY<TYPE>*>(InterlockedPopEntrySList(&m_head));
 		return (entry ? &entry->Value : NULL);
 	}
 

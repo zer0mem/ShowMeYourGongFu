@@ -120,6 +120,7 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 	}
 
 	pfIRet->IRet.StackPointer = &pfIRet->IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
+	pfIRet->IRet.Flags &= ~TRAP;
 	return LoadContext(reg);
 }
 
@@ -131,8 +132,10 @@ void CThreadEvent::SmartTraceEvent(
 	)
 {
 	if (m_dbgThreadInfo.LoadTrapContext(reg, branchInfo, pfIRet))
-		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
-			(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set for this target-thread, then just freeze target-thread
+	{
+		(void)m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
+		(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set for this target-thread, then just freeze target-thread
+	}
 }
 
 __checkReturn
@@ -171,7 +174,7 @@ bool CThreadEvent::Init(
 	)
 {
 	reinterpret_cast<EVENT_THREAD_INFO&>(m_dbiThreadInfo).LoadContext(reg);
-	m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);//enter monitor-thread to the game
+	(void)m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);//enter monitor-thread to the game
 
 	return m_initialized;
 }
@@ -226,14 +229,9 @@ bool DBI_THREAD_EVENT::UpdateContext(
 		CMdl dbi_auto_context(ContextOnStack, sizeof(cthreadInfo.DbiOutContext));
 		DBI_OUT_CONTEXT* dbi_context = static_cast<DBI_OUT_CONTEXT*>(dbi_auto_context.ForceWritePtrUser());
 		if (dbi_context)
-		{
 			*dbi_context = cthreadInfo.DbiOutContext;
-			return true;
-		}
 	}
-	KeBreak();
-	return true;//codecoverme.exe ohack
-	return false;
+	return true;
 }
 
 __checkReturn

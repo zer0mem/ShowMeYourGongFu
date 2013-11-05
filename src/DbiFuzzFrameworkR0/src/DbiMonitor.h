@@ -19,6 +19,7 @@
 
 #include "../../Common/utils/Queue.hpp"
 
+//need to refactor and clean up this messy class .. 
 class CDbiMonitor : 
 	public CCRonos,
 	public CSingleton<CDbiMonitor>
@@ -53,22 +54,17 @@ public:
 		__inout CProcess2Fuzz** process
 		);	
 
-	static CQueue< CAutoTypeMalloc<TRACE_INFO> > m_branchInfoQueue;
+	static CStack< CAutoTypeMalloc<TRACE_INFO> > m_branchInfoStack;
 
 	static
 	void CreateThread()
 	{
 		KeBreak();
-		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoQueue.Create();
+		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoStack.Create();
 		if (trace_info)
 		{
 			::new(trace_info) CAutoTypeMalloc<TRACE_INFO>;
-			trace_info->GetMemory()->StateInfo.ErrorCode.UErrCode = 3;
-			m_branchInfoQueue.Push(trace_info);
-
-			trace_info = m_branchInfoQueue.Pop();
-			DbgPrint("\n poped expt : %p", trace_info->GetMemory()->StateInfo.ErrorCode.UErrCode);
-			m_branchInfoQueue.Push(trace_info);
+			m_branchInfoStack.Push(trace_info);
 		}
 	}
 
@@ -77,39 +73,35 @@ public:
 	{
 		KeBreak();
 		//add if -> for if not succesfull create thread .. some kind of counter ...
-		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoQueue.Pop();
+		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoStack.Pop();
 		ASSERT(trace_info);
 
-		m_branchInfoQueue.Remove(trace_info);
+		m_branchInfoStack.Remove(trace_info);
 	}
 
-	static
+
+protected:
 	void InstallPageFaultHooks();
 
 	static
-	void DisablePatchGuard(
-		__in BYTE coreId
-		);
-
-protected:
-	static
-	void HookProtectionMSR(
+	void VMMRDMSR(
 		__inout ULONG_PTR reg[REG_COUNT]
 	);
 	static
-	void TrapHandler(
+	void VMMEXCEPTION(
 		__inout ULONG_PTR reg[REG_COUNT]
 	);
 	static
-	void CPUIDCALLBACK(
+	void VMMCPUID(
 		__inout ULONG_PTR reg[REG_COUNT] 
 	);
 	static 
-	void WrMsrSpecialBTF(
+	void VMMWRMSR(
 		__inout ULONG_PTR reg[REG_COUNT] 
 	);
 
-	virtual __checkReturn
+	virtual 
+	__checkReturn
 	bool SetVirtualizationCallbacks();
 
 	virtual
@@ -131,9 +123,7 @@ protected:
 
 protected:
 	void* m_syscalls[MAX_PROCID];
-	static void* PageFaultHandlerPtr[MAX_PROCID];
-
-	static KEVENT m_patchGuardEvents[MAX_PROCID];
+	static void* m_pageFaultHandlerPtr[MAX_PROCID];
 };
 
 #endif //__SYSENETER_H__

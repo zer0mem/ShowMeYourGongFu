@@ -53,6 +53,7 @@ protected:
 	BYTE m_vCpuCount;
 	CALLBACK* m_callbacks;
 	ULONG_PTR m_traps[MAX_CALLBACK];
+
 	CVirtualizedCpu* m_vCpu;
 };
 

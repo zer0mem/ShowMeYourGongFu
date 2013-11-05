@@ -34,6 +34,15 @@ __hv_vmcall proc
 	jmp _resume
 __hv_vmcall endp
 
+__hv_rdtsc proc
+	;rdtsc
+	push rcx
+	mov rcx, 010h
+	rdmsr;IA32_TIME_STAMP_COUNTER
+	pop rcx
+	jmp _resume
+__hv_rdtsc endp
+
 @dummy_end:
 
 hv_exit proc

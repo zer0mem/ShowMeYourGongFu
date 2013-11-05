@@ -45,14 +45,16 @@ EXTERN_C void __hv_crx();
 EXTERN_C void __hv_dummy();
 EXTERN_C void __hv_dummy();
 EXTERN_C void __hv_vmcall();
+EXTERN_C void __hv_rdtsc();
 
-#define INVD		((ULONG_PTR)__hv_invd)
-#define RDMSR		((ULONG_PTR)__hv_rdmsr)
-#define WRMSR		((ULONG_PTR)__hv_wrmsr)
-#define CPUID		((ULONG_PTR)__hv_cpuid)
-#define CRX			((ULONG_PTR)__hv_crx)
-#define VMX			((ULONG_PTR)__hv_dummy)
-#define DUMMY		((ULONG_PTR)__hv_dummy)
-#define VMCALL		((ULONG_PTR)__hv_vmcall)
+#define INVD		reinterpret_cast<ULONG_PTR>(__hv_invd)
+#define RDMSR		reinterpret_cast<ULONG_PTR>(__hv_rdmsr)
+#define WRMSR		reinterpret_cast<ULONG_PTR>(__hv_wrmsr)
+#define CPUID		reinterpret_cast<ULONG_PTR>(__hv_cpuid)
+#define CRX			reinterpret_cast<ULONG_PTR>(__hv_crx)
+#define VMX			reinterpret_cast<ULONG_PTR>(__hv_dummy)
+#define DUMMY		reinterpret_cast<ULONG_PTR>(__hv_dummy)
+#define VMCALL		reinterpret_cast<ULONG_PTR>(__hv_vmcall)
+#define RDTSC		reinterpret_cast<ULONG_PTR>(__hv_rdtsc)
 
 #endif //__HYPERVISOR_H__

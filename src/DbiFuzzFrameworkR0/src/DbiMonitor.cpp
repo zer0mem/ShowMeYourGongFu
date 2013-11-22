@@ -74,7 +74,7 @@ bool CDbiMonitor::SetVirtualizationCallbacks()
 	m_traps[VMX_EXIT_EXCEPTION] = reinterpret_cast<ULONG_PTR>(VMMEXCEPTION);
 
 	//disable patchguard
-	//RegisterCallback(m_callbacks, AntiPatchGuard);
+	RegisterCallback(m_callbacks, AntiPatchGuard);
 
 	return RegisterCallback(m_callbacks, VMMCPUID);
 }
@@ -109,9 +109,11 @@ void CDbiMonitor::Install()
 				int InfoType = 0;
 				__cpuid(CPUInfo, InfoType);
 				DbgPrint("\r\n~~~~~~~~~~~ !CPUID (%i) : %s ~~~~~~~~~~~\r\n", i, CPUInfo);
+				KeBreak();
 			}
 		}
 
+		KeBreak();
 		InstallPageFaultHooks();
 		DbgPrint("\n\n******************************************\n***** DBI FuzzFramework, installed!\n******************************************\n");
 	}
@@ -161,7 +163,6 @@ void CDbiMonitor::InstallPageFaultHooks()
 	{
 		if (!GetPFHandler(core_id))
 		{
-
 			KeSetSystemAffinityThread(PROCID(core_id));
 
 			GDT	idtr;
@@ -474,7 +475,7 @@ EXTERN_C size_t PatchGuardHook(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	DbgPrint("\n >>>>>> PatchGuardHook %p [%p] %p\n\n", reg[RCX], reg, reg[RSI]);
+	DbgPrint("\n >>>>>> PatchGuardHook %p [%p] %p --- %p\n\n", reg[RCX], reg, reg[RSI], KeBreak);
 	KeBreak();
 	return CUndoc::PatchGuardContextStackTopDelta();
 }

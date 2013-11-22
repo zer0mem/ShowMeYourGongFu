@@ -48,7 +48,6 @@ struct EVENT_THREAD_INFO
 		__in ULONG_PTR reg[REG_COUNT]
 		) = 0;
 
-	__checkReturn
 	virtual
 	bool UpdateContext(
 		__in ULONG_PTR reg[REG_COUNT],
@@ -73,7 +72,6 @@ struct DBI_THREAD_EVENT :
 		__in ULONG_PTR reg[REG_COUNT]
 		);
 
-	__checkReturn
 	virtual
 	bool UpdateContext(
 		__in ULONG_PTR reg[REG_COUNT],
@@ -87,7 +85,10 @@ struct DBG_THREAD_EVENT :
 	DBG_THREAD_EVENT(
 		__in HANDLE processId
 		) : EVENT_THREAD_INFO(processId) 
-	{ }
+	{
+		IRet = NULL;
+		FreezeRequested = true;
+	}
 
 	__checkReturn
 	bool LoadTrapContext( 
@@ -105,6 +106,11 @@ struct DBG_THREAD_EVENT :
 		);
 
 	__checkReturn
+	bool LoadFreezedContext( 
+		__in ULONG_PTR reg[REG_COUNT],
+		__in PFIRET* pfIRet
+		);
+
 	virtual
 	bool UpdateContext(
 		__in ULONG_PTR reg[REG_COUNT],
@@ -112,6 +118,8 @@ struct DBG_THREAD_EVENT :
 		);
 
 	void* IRet;
+	bool FreezeRequested;
+	ULONG_PTR FreezeReason;
 
 protected:
 	__checkReturn
@@ -134,19 +142,28 @@ public:
 	~CThreadEvent();
 
 // FUZZ MONITOR HANDLER support routines
-	void SmartTraceEvent( 
+	__checkReturn
+	bool SmartTraceEvent( 
 		__in ULONG_PTR reg[REG_COUNT], 
 		__in const TRACE_INFO* branchInfo,
 		__in const PFIRET* pfIRet 
 		);
 
-	void RegisterMemoryAccess( 
+	__checkReturn
+	bool RegisterMemoryAccess( 
 		__in ULONG_PTR reg[REG_COUNT], 
 		__in const BYTE* faultAddr, 
 		__in CMemoryRange* mem, 
 		__in PFIRET* pfIRret
 		);
 
+	__checkReturn
+	bool  FreezeThread(
+		__in ULONG_PTR reg[REG_COUNT],
+		__in PFIRET* pfIRet
+		);
+
+	__checkReturn
 	bool Init(
 		__in ULONG_PTR reg[REG_COUNT]
 	);
@@ -157,12 +174,19 @@ public:
 	);
 
 	__checkReturn
+	bool IsNecessaryToFreeze();
+
+	void FreezeThreadRequest(
+		__in ULONG_PTR reason
+		);
+
+	__checkReturn
 	__forceinline
 	bool ResolveThread()
 	{
-		if (!m_initialized)
-			m_initialized = m_ethread.Initialize();
-		return m_initialized;
+		if (!m_resolved)
+			m_resolved = m_ethread.Initialize();
+		return m_resolved;
 	}
 	
 	__forceinline
@@ -181,7 +205,7 @@ protected:
 	DBI_THREAD_EVENT m_dbiThreadInfo;
 	DBG_THREAD_EVENT m_dbgThreadInfo;
 
-	bool m_initialized;
+	bool m_resolved;
 
 private:
 	//reference this ethread in m$

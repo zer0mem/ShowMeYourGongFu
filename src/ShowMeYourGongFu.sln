@@ -8,6 +8,9 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DbiFuzzFrameworkR0", "DbiFuzzFrameworkR0\DbiFuzzFrameworkR0.vcxproj", "{0BAD0E19-9310-4439-A3F9-63EAF42C8575}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "InAppFuzzDbiModule", "InAppFuzzDbiModule\InAppFuzzDbiModule\InAppFuzzDbiModule.vcxproj", "{1FC93194-EB4B-41C2-8C77-DFF69DC7BF2B}"
+	ProjectSection(ProjectDependencies) = postProject
+		{0BAD0E19-9310-4439-A3F9-63EAF42C8575} = {0BAD0E19-9310-4439-A3F9-63EAF42C8575}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

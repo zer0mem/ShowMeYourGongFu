@@ -70,10 +70,14 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 		if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img_id->Value->ImageName())))
 		{
 			//KeBreak();
+			//after CPE rellocate image!!!
 			CPE pe(imageInfo->ImageBase);
 			const void* func_name;
 			for (size_t i = 0; (func_name = CConstants::InAppExtRoutines(i)); i++)
 				m_extRoutines[i] = pe.GetProcAddress(func_name);
+
+			DbgPrint("\n\nINJECTED IMAGE RANGE : <%p, %p> <- %p\n\n ", img_id->Value->Image().Begin(), img_id->Value->Image().End(), m_extRoutines[ExtWaitForDbiEvent]);
+			DbgPrint("\n\nINJECTED IMAGE RANGE : <%p, %p> <- %p\n\n ", imageInfo->ImageBase, (ULONG_PTR)imageInfo->ImageBase + imageInfo->ImageSize, m_extRoutines[ExtWaitForDbiEvent]);
 
 			DbgPrint("\n#######################################\n# CODECOVERME.EXE ID %p\n#######################################", PsGetCurrentProcessId());
 		}
@@ -118,19 +122,55 @@ bool CProcess2Fuzz::PageFault(
 {
 	ResolveThreads();
 	PFIRET* pf_iret = PPAGE_FAULT_IRET(reg);
-	
+
 	if (PsGetCurrentProcessId() == m_processId)
 	{
+		CMemoryRange* mem;
+
+		// { ************************** touching memory by kernel; OS needs to read from it, or readprocessmemory ?
+		//when frmwrk will be switched to r0 tracing, this branch -handling kernel touch- should be else branch of next branch {if getfuzzthread(currentthreadid}else{this}}
+		if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem) && !IsUserModeAddress(pf_iret->IRet.Return))
+		{
+			KeBreak();//TODO -> doimplement touching monitored memory by kernel
+			if (CMMU::IsAccessed(faultAddr))
+				CMMU::SetValid(mem->Begin(), mem->GetSize());
+
+			m_mem2watch.Pop(*mem);
+
+			THREAD* thread;
+			if (m_threads.Find(NULL, &thread))
+			{
+				do
+				{
+					thread->Value->FreezeThreadRequest(MemoryTouchByKernel);
+				} while(m_threads.GetNext(thread->Value->ThreadId(), &thread));
+			}
+
+			return false;//not handled! -> process original PageFault handler!!!
+		}
+		// } ************************** touching memory by kernel!
+
+		bool handled = false;
 		CThreadEvent* fuzz_thread;
 		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
-			//TODO : if no monitor-thread paired then just freeze this thread!!
+			// { ************************** if no monitor-thread paired then just freeze this thread!!
+			if (fuzz_thread->IsNecessaryToFreeze() && m_extRoutines[ExtWaitForDbiEvent])
+			{
+				//freeze in user mode!!
+				if (IsUserModeAddress(pf_iret->IRet.Return))
+				{
+					if (fuzz_thread->FreezeThread(reg, pf_iret))
+						handled = true;
+				}
+			}
+			// } ************************** if no monitor-thread paired then just freeze this thread!!
 
 			// { ************************** HANDLE HV TRAP EXIT ************************** 
-			if (faultAddr == pf_iret->IRet.Return)
+			else if (faultAddr == pf_iret->IRet.Return)
 			{
 				//if rip potentionaly points to kernel mode
-				if (!CRange<void>(MM_LOWEST_USER_ADDRESS, MM_HIGHEST_USER_ADDRESS).IsInRange(pf_iret->IRet.Return))
+				if (!IsUserModeAddress(pf_iret->IRet.Return))
 				{
 					//try except blog ? -> indeed use this address as ptr to kernel struct-> 
 					//TODO : check if it is really our kernel object !!!!!
@@ -138,31 +178,35 @@ bool CProcess2Fuzz::PageFault(
 					TRACE_INFO* trace_info = trace_info_container->GetMemory();
 					if (fuzz_thread->GetStack().IsInRange(trace_info->StateInfo.IRet.StackPointer))
 					{
-						fuzz_thread->SmartTraceEvent(reg, trace_info, pf_iret);
+						if (fuzz_thread->SmartTraceEvent(reg, trace_info, pf_iret))
+							handled = true;
 
 						//push back to trace_info queue
 						CDbiMonitor::m_branchInfoStack.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info_container));
-						//handle branch tracing - callback from HV
-						pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
-
-						return true;
 					}
 				}
 			}
 			// } ************************** HANDLE HV TRAP EXIT ************************** 
 
 			// { ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
-			CMemoryRange* mem;
-			if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem))
+			else if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem))
 			{
 				if (!IsUserModeAddress(pf_iret->IRet.Return))
-					KeBreak();//TODO -> doimplement touching monitored memory by kernel
+				{
+					DbgPrint("\n\nKERNEL MODE!!!\n\n");
+				}
+				KeBreak();
+				if (fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret))
+					handled = true;
+			}
+			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 
-				fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret);
+			if (handled)
+			{
+				//KeWaitForDbiEvent ...
 				pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
 				return true;
 			}
-			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 		}
 	}
 	return false;
@@ -179,13 +223,7 @@ bool CProcess2Fuzz::DbiInit(
 {
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], &fuzz_thread))
-	{
-		CEProcess eprocess(m_processId);
-		CApcLvl irql;
-		CAutoEProcessAttach attach(eprocess);
-		if (eprocess.IsAttached())
-			return fuzz_thread->Init(reg);
-	}
+		return fuzz_thread->Init(reg);
 
 	return false;
 }
@@ -309,26 +347,18 @@ bool CProcess2Fuzz::DbiEnumThreads(
 	return false;
 }
 
-NTSYSAPI 
-NTSTATUS 
-NTAPI 
-ZwSuspendThread( IN HANDLE ThreadHandle, OUT PULONG PreviousSuspendCount OPTIONAL );
-//probably skip zwsuspendthread, and suspend thread based on PageFault handling and sempahor for suspending targeted thread
 __checkReturn
 bool CProcess2Fuzz::DbiSuspendThread( 
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	return false;
-	/*
 	CThreadEvent* fuzz_thread;
 	if (GetFuzzThread((HANDLE)reg[DBI_FUZZAPP_THREAD_ID], &fuzz_thread))
 	{
-		PPAGE_FAULT_IRET(reg)->Return = reinterpret_cast<const void*>(reg[DBI_R3TELEPORT]);
-		return NT_SUCCESS(ZwSuspendThread(fuzz_thread->ThreadId(), NULL));
+		fuzz_thread->FreezeThreadRequest(ThreadSuspended);
+		return true;
 	}
 	return false;
-	*/
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -577,6 +607,15 @@ bool CProcess2Fuzz::Syscall(
 	case SYSCALL_DUMP_MEMORY:
 		if (m_processId != PsGetCurrentProcessId())
 			status = DbiDumpMemory(reg);
+		else//ERROR
+			KeBreak();
+
+		break;
+
+//suspend thread!
+	case SYSCALL_FREEZE_THREAD:
+		if (m_processId != PsGetCurrentProcessId())
+			status = DbiSuspendThread(reg);
 		else//ERROR
 			KeBreak();
 

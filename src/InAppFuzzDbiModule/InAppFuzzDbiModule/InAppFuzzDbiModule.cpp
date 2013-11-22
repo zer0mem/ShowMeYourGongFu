@@ -28,15 +28,13 @@ extern "C" void fast_call_monitor_wait(
 #define FastCallMonitor fast_call_monitor
 #define FastCallMonitorWait fast_call_monitor_wait
 
-
 EXTERN_C __declspec(dllexport) 
 void SmartTrace(
-	__in HANDLE procId,
-	__in HANDLE threadId,
+	__in CID_ENUM* cid,
 	__inout DBI_OUT_CONTEXT* dbiOut
 	)
 {
-	FastCallMonitorWait(SYSCALL_TRACE_FLAG, procId, threadId, dbiOut);
+	FastCallMonitorWait(SYSCALL_TRACE_FLAG, cid->ProcId.Value, cid->ThreadId.Value, dbiOut);
 }
 
 EXTERN_C __declspec(dllexport) 
@@ -51,12 +49,11 @@ void GetNextFuzzThread(
 
 EXTERN_C __declspec(dllexport) 
 void Init(
-	__in HANDLE procId,
-	__in HANDLE threadId,
+	__in CID_ENUM* cid,
 	__inout DBI_OUT_CONTEXT* dbiOut
 	)
 {
-	FastCallMonitor(SYSCALL_INIT, procId, threadId, dbiOut);
+	FastCallMonitor(SYSCALL_INIT, cid->ProcId.Value, cid->ThreadId.Value, dbiOut);
 }
 
 EXTERN_C __declspec(dllexport) 
@@ -128,7 +125,7 @@ void DbiSetHook(
 }
 
 EXTERN_C __declspec(dllexport) 
-	void DbiWatchMemoryAccess(
+void DbiWatchMemoryAccess(
 	__in HANDLE procId,
 	__inout PARAM_MEM2WATCH* dbiParams
 	)
@@ -152,4 +149,12 @@ void DbiUnsetMemoryBreakpoint(
 	)
 {
 	FastCallMonitor(SYSCALL_UNSET_MEMORY_BP, procId, 0, dbiParams);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiSuspendThread(
+	__in const CID_ENUM* cid
+	)
+{
+	FastCallMonitor(SYSCALL_FREEZE_THREAD, cid->ProcId.Value, cid->ThreadId.Value, NULL);
 }

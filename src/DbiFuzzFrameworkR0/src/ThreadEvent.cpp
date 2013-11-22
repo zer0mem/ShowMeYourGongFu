@@ -17,10 +17,6 @@ EXTERN_C void syscall_instr_epilogue();
 
 #include "DbiMonitor.h"
 
-//need to call _dynamic_initializer_for__cSyscallSize_
-//static const size_t cSyscallSize = (ULONG_PTR)syscall_instr_epilogue - (ULONG_PTR)syscall_instr_prologue;
-#define cSyscallSize ((ULONG_PTR)syscall_instr_epilogue - (ULONG_PTR)syscall_instr_prologue)
-
 CThreadEvent::CThreadEvent(
 	__in HANDLE threadId, 
 	__in HANDLE parentProcessId,
@@ -29,7 +25,7 @@ CThreadEvent::CThreadEvent(
 		m_dbgThreadInfo(PsGetCurrentProcessId()),
 		m_dbiThreadInfo(parentProcessId),
 		m_ethread(threadId),
-		m_initialized(false),
+		m_resolved(false),
 		m_vad(vad)
 {
 	CDbiMonitor::CreateThread();
@@ -75,7 +71,8 @@ bool EVENT_THREAD_INFO::FlipSemaphore()
 // ****************** MONITOR DLL INJECTED DBI HELPER ******************
 //----------------------------------------------------------------------
 
-void CThreadEvent::RegisterMemoryAccess( 
+__checkReturn
+bool CThreadEvent::RegisterMemoryAccess( 
 	__in ULONG_PTR reg[REG_COUNT], 
 	__in const BYTE* faultAddr, 
 	__in CMemoryRange* mem,
@@ -83,8 +80,11 @@ void CThreadEvent::RegisterMemoryAccess(
 	)
 {
 	if (m_dbgThreadInfo.LoadPFContext(reg, mem, pfIRet, faultAddr))
-		if (m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo))
-			(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set fot this target-thread, then just freeze target-thread
+	{
+		m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
+		return m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set fot this target-thread, then just freeze target-thread		
+	}
+	return false;
 }
 
 __checkReturn
@@ -95,6 +95,7 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 	__in const BYTE* faultAddr
 	)
 {
+	RtlZeroMemory(&DbiOutContext, sizeof(DbiOutContext));
 	DbgPrint("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@@ MEMORY BP : %p [%x   / %p]\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n", mem->Begin(), mem->GetSize(), mem->GetFlags());
 	DbiOutContext.TraceInfo.StateInfo = *pfIRet;
 	DbiOutContext.MemoryInfo.Memory.Value = faultAddr;
@@ -125,7 +126,7 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 }
 
 __checkReturn
-void CThreadEvent::SmartTraceEvent( 
+bool CThreadEvent::SmartTraceEvent( 
 	__in ULONG_PTR reg[REG_COUNT], 
 	__in const TRACE_INFO* branchInfo, 
 	__in const PFIRET* pfIRet 
@@ -133,9 +134,12 @@ void CThreadEvent::SmartTraceEvent(
 {
 	if (m_dbgThreadInfo.LoadTrapContext(reg, branchInfo, pfIRet))
 	{
-		(void)m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
-		(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set for this target-thread, then just freeze target-thread
+		m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
+		//return m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set for this target-thread, then just freeze target-thread
+		m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set for this target-thread, then just freeze target-thread
+		return true;
 	}
+	return false;
 }
 
 __checkReturn
@@ -145,6 +149,7 @@ bool DBG_THREAD_EVENT::LoadTrapContext(
 	__in const PFIRET* pfIRet 
 	)
 {
+	RtlZeroMemory(&DbiOutContext, sizeof(DbiOutContext));
 	//save info from VMM trap handler
 	DbiOutContext.TraceInfo = *branchInfo;
 	//cs and ss obtain here, exec as few instructions in VMM as possible ...
@@ -165,6 +170,55 @@ bool DBG_THREAD_EVENT::LoadTrapContext(
 }
 
 
+__checkReturn
+bool CThreadEvent::IsNecessaryToFreeze()
+{
+	return (m_resolved && m_dbgThreadInfo.FreezeRequested);
+}
+
+void CThreadEvent::FreezeThreadRequest(
+	__in ULONG_PTR reason
+	)
+{
+	m_dbgThreadInfo.FreezeReason = reason;
+	m_dbgThreadInfo.FreezeRequested = true;
+}
+
+__checkReturn
+bool CThreadEvent::FreezeThread( 
+	__in ULONG_PTR reg[REG_COUNT],
+	__in PFIRET* pfIRet
+	)
+{
+	if (m_dbgThreadInfo.LoadFreezedContext(reg, pfIRet))
+	{
+		m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);
+		(void)m_dbiThreadInfo.FlipSemaphore();//if no monitor-thread set fot this target-thread, then just freeze target-thread
+		return true;
+	}
+	return false;
+}
+
+__checkReturn
+bool DBG_THREAD_EVENT::LoadFreezedContext( 
+	__in ULONG_PTR reg[REG_COUNT], 
+	__in PFIRET* pfIRet 
+	)
+{	
+	RtlZeroMemory(&DbiOutContext, sizeof(DbiOutContext));
+
+	DbiOutContext.TraceInfo.StateInfo = *pfIRet;
+	DbiOutContext.TraceInfo.Reason.Value = FreezeReason;
+
+	//TODO : rethink -> probably this shoud be by defaul in func 'LoadContext', and kick it out from HV TrapHandler !
+	pfIRet->IRet.StackPointer = &pfIRet->IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
+
+	if (LoadContext(reg))
+		FreezeRequested = false;
+
+	return !FreezeRequested;
+}
+
 //----------------------------------------------------------
 // ****************** MONITOR DLL DBI API ******************
 //----------------------------------------------------------
@@ -173,10 +227,12 @@ bool CThreadEvent::Init(
 	__in ULONG_PTR reg[REG_COUNT]
 	)
 {
-	reinterpret_cast<EVENT_THREAD_INFO&>(m_dbiThreadInfo).LoadContext(reg);
-	(void)m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);//enter monitor-thread to the game
-
-	return m_initialized;
+	if (m_dbiThreadInfo.LoadContext(reg))
+	{
+		m_dbiThreadInfo.UpdateContext(reg, m_dbgThreadInfo);//enter monitor-thread to the game
+		return true;
+	}
+	return false;
 }
 
 //invoked from monitor
@@ -187,7 +243,7 @@ bool CThreadEvent::SmartTrace(
 {
 	if (m_dbiThreadInfo.LoadContext(reg))
 		if (m_dbgThreadInfo.UpdateContext(reg, m_dbiThreadInfo))
-			return m_dbgThreadInfo.FlipSemaphore();//if no target-thread ready then invoke exc to the monitor-thread!
+			return m_dbgThreadInfo.FlipSemaphore();
 
 	return false;
 }
@@ -215,7 +271,6 @@ bool DBI_THREAD_EVENT::LoadContext(
 	return false;
 }
 
-__checkReturn
 bool DBI_THREAD_EVENT::UpdateContext( 
 	__in ULONG_PTR reg[REG_COUNT], 
 	__in const EVENT_THREAD_INFO& cthreadInfo 
@@ -292,7 +347,11 @@ bool DBG_THREAD_EVENT::UpdateContext(
 				else
 					wrmsr(IA32_DEBUGCTL, (BTF | LBR));//enable BTF -> special handling for wrmsr in HV
 
-				*iret = cthreadInfo.DbiOutContext.TraceInfo.StateInfo.IRet;				
+				*iret = cthreadInfo.DbiOutContext.TraceInfo.StateInfo.IRet;
+
+				//up to caller, if was thread in freezed state caller should now already about it ...
+				//TODO -> FreezeRequested should to be member of DbiOutContext
+				FreezeRequested = false;
 			}
 
 			return true;

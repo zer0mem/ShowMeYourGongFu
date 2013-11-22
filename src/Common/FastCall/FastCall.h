@@ -29,6 +29,8 @@ enum
 	
 	SYSCALL_UNSET_MEMORY_BP,
 	SYSCALL_UNSET_ADDRESS_BP,
+
+	SYSCALL_FREEZE_THREAD,
 };
 
 enum
@@ -60,7 +62,9 @@ enum EnumTraceReason
 	BranchTraceFlag = 0,
 	SingleTraceFlag,
 	Hook,
-	MemoryAcces
+	MemoryAcces,
+	ThreadSuspended,
+	MemoryTouchByKernel
 };
 
 #pragma pack(push, 1)

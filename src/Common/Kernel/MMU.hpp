@@ -156,9 +156,6 @@ public:
 		{
 			CMMU mmu(addr);
 			PAGE_TABLE_ENTRY pte;
-			if (mmu.GetPTE(pte) && !pte.Accessed)
-				DbgPrint("\n\n page not accessed -> BULLSHIT!!! %p \n\n", addr);
-			KeBreak();
 			if (!mmu.GetPTE(pte) || !pte.Accessed)//alter only used pages!!
 				return false;
 		}

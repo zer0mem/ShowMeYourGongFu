@@ -158,4 +158,27 @@ private:
 	const AVL_INFO* m_avlInfo;
 };
 
+
+//----------------------------------------------------------
+// ****************** VAD MEMORY RESOLVER ******************
+//----------------------------------------------------------
+
+class CMMVADResolver
+{
+public:
+	static bool IsWriteable(
+		__in ULONG_PTR flags
+		)
+	{
+		return !!(MmProtectToValue[reinterpret_cast<MMVAD_FLAGS*>(&flags)->Protection] & PAGE_WR_MASK);
+	}
+	static bool IsNoExecute(
+		__in ULONG_PTR flags
+		)
+	{
+		return !!(MmProtectToValue[reinterpret_cast<MMVAD_FLAGS*>(&flags)->Protection] & PAGE_EXE_MASK);
+	}
+};
+
+
 #endif //__VADWALKER_H__

@@ -76,9 +76,6 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 			for (size_t i = 0; (func_name = CConstants::InAppExtRoutines(i)); i++)
 				m_extRoutines[i] = pe.GetProcAddress(func_name);
 
-			DbgPrint("\n\nINJECTED IMAGE RANGE : <%p, %p> <- %p\n\n ", img_id->Value->Image().Begin(), img_id->Value->Image().End(), m_extRoutines[ExtWaitForDbiEvent]);
-			DbgPrint("\n\nINJECTED IMAGE RANGE : <%p, %p> <- %p\n\n ", imageInfo->ImageBase, (ULONG_PTR)imageInfo->ImageBase + imageInfo->ImageSize, m_extRoutines[ExtWaitForDbiEvent]);
-
 			DbgPrint("\n#######################################\n# CODECOVERME.EXE ID %p\n#######################################", PsGetCurrentProcessId());
 		}
 	}
@@ -131,6 +128,7 @@ bool CProcess2Fuzz::PageFault(
 		//when frmwrk will be switched to r0 tracing, this branch -handling kernel touch- should be else branch of next branch {if getfuzzthread(currentthreadid}else{this}}
 		if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem) && !IsUserModeAddress(pf_iret->IRet.Return))
 		{
+			DbgPrint("\n\n@@KERNEL TOUCH!!\n\n");
 			KeBreak();//TODO -> doimplement touching monitored memory by kernel
 			if (CMMU::IsAccessed(faultAddr))
 				CMMU::SetValid(mem->Begin(), mem->GetSize());
@@ -162,9 +160,27 @@ bool CProcess2Fuzz::PageFault(
 				{
 					if (fuzz_thread->FreezeThread(reg, pf_iret))
 						handled = true;
+					else
+						DbgPrint("\n\n FREEZE ACC FAIL\n\n");
 				}
 			}
 			// } ************************** if no monitor-thread paired then just freeze this thread!!
+
+			// { ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
+			else if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem))
+			{
+				if (!IsUserModeAddress(pf_iret->IRet.Return))
+				{
+					DbgPrint("\n\nKERNEL MODE!!!\n\n");
+				}
+				
+				if (!CMMU::IsValid(faultAddr))
+				{
+					if (fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret))
+						handled = true;
+				}
+			}
+			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 
 			// { ************************** HANDLE HV TRAP EXIT ************************** 
 			else if (faultAddr == pf_iret->IRet.Return)
@@ -180,6 +196,8 @@ bool CProcess2Fuzz::PageFault(
 					{
 						if (fuzz_thread->SmartTraceEvent(reg, trace_info, pf_iret))
 							handled = true;
+						else
+							DbgPrint("\n\n TRAP ACC FAIL\n\n");
 
 						//push back to trace_info queue
 						CDbiMonitor::m_branchInfoStack.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info_container));
@@ -188,18 +206,6 @@ bool CProcess2Fuzz::PageFault(
 			}
 			// } ************************** HANDLE HV TRAP EXIT ************************** 
 
-			// { ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
-			else if (m_mem2watch.Find(CMemoryRange(faultAddr, sizeof(ULONG_PTR)), &mem))
-			{
-				if (!IsUserModeAddress(pf_iret->IRet.Return))
-				{
-					DbgPrint("\n\nKERNEL MODE!!!\n\n");
-				}
-				KeBreak();
-				if (fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret))
-					handled = true;
-			}
-			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 
 			if (handled)
 			{
@@ -284,36 +290,60 @@ bool CProcess2Fuzz::DbiSetMemoryBreakpoint(
 	__in ULONG syscallId
 	)
 {
-	PARAM_MEM2WATCH params;
-	if (ReadParamBuffer<PARAM_MEM2WATCH>(reg, &params))
-	{
-		//for now support just aligned watching .. in other case more processing needed ...
-		BYTE* mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(params.Memory.Value));
-		size_t size = ALIGN((params.Size.Value + ((ULONG_PTR)params.Memory.Value - (ULONG_PTR)mem2watch) + PAGE_SIZE), PAGE_SIZE);
+	size_t size = 0;
+	BYTE* mem2watch = NULL;
+	CVadNodeMemRange vad_mem;
 
-		CVadNodeMemRange vad_mem;
-		if (m_vad.FindVadMemoryRange(mem2watch, &vad_mem))
+	CApcLvl irql;
+	{
+		CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(PARAM_MEM2WATCH));
+		PARAM_MEM2WATCH* mem = static_cast<PARAM_MEM2WATCH*>(auto_mem.WritePtrUser());
+		if (mem)
 		{
-			CEProcess eprocess(m_processId);
-			CApcLvl irql;
-			CAutoEProcessAttach attach(eprocess);
-			if (eprocess.IsAttached())
+			mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(mem->Memory.Value));
+			size = ALIGN((mem->Size.Value + (mem->Memory.uValue - reinterpret_cast<ULONG_PTR>(mem2watch)) + PAGE_SIZE), PAGE_SIZE);
+
+			if (m_vad.FindVadMemoryRange(mem2watch, &vad_mem))
 			{
-				if (SYSCALL_SET_MEMORY_BP == syscallId)
-				{
-					if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags)))
-						CMMU::SetInvalid(mem2watch, size);//if not accessed then not set ...
-				}
-				else
-				{
-					if (m_mem2watch.Pop(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags)))
-						CMMU::SetValid(mem2watch, size);//if not accessed then not set ...
-				}
+				mem->Size.Value = size;
+				mem->Memory.Value = mem2watch;		
 			}
 		}
-		return true;
 	}
-	return false;
+
+	//separated to two blocks because here we attach to monitored process == write user ptr will be invalid!
+
+	bool succ = false;
+	if (mem2watch)
+	{
+		CEProcess eprocess(m_processId);
+		CAutoEProcessAttach attach(eprocess);
+		if (eprocess.IsAttached())
+		{
+			switch (syscallId)
+			{
+			case SYSCALL_SET_ACCESS_BP:
+				if (m_mem2watch.Push(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags)))
+				{
+					CMMU::SetInvalid(mem2watch, size);
+					succ = true;
+				}
+				break;
+			case SYSCALL_UNSET_ACCESS_BP:
+				if (m_mem2watch.Pop(CMemoryRange(mem2watch, size, vad_mem.GetFlags().UFlags)))
+				{
+					CMMU::SetValid(mem2watch, size);
+					succ = true;
+				}
+				break;			
+
+			default:
+				break;
+			}
+		}
+	}
+
+	return succ;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -543,8 +573,8 @@ bool CProcess2Fuzz::Syscall(
 		break;
 
 //'hooks' - tracer callbacks
-	case SYSCALL_SET_MEMORY_BP:
-	case SYSCALL_UNSET_MEMORY_BP:
+	case SYSCALL_SET_ACCESS_BP:
+	case SYSCALL_UNSET_ACCESS_BP:
 		if (m_processId != PsGetCurrentProcessId())
 			status = DbiSetMemoryBreakpoint(reg, static_cast<ULONG>(reg[SYSCALL_ID]));
 		else//ERROR

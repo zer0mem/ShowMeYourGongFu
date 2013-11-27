@@ -122,6 +122,49 @@ public:
 		PAGE_TABLE_ENTRY pte;
 		return (mmu.GetPTE(pte) && pte.Valid);
 	}
+	
+	static
+	bool IsValidArea(
+		__in const void* addr,
+		__in size_t size
+		)
+	{
+		const BYTE* end_addr = static_cast<const BYTE*>(PAGE_ALIGN(reinterpret_cast<ULONG_PTR>(addr) + size + PAGE_SIZE));
+		for (addr = static_cast<const BYTE*>(addr); 
+			addr < end_addr; 
+			addr = reinterpret_cast<const BYTE*>(reinterpret_cast<ULONG_PTR>(addr) + PAGE_SIZE))
+		{
+			CMMU mmu(addr);
+			PAGE_TABLE_ENTRY pte;
+			if (!mmu.GetPTE(pte) || !pte.Valid)//alter only used pages!!
+				return false;
+		}
+
+		return true;
+	}
+
+	static
+	bool IsAccessedArea(
+		__in const void* addr,
+		__in size_t size
+		)
+	{
+		const BYTE* end_addr = static_cast<const BYTE*>(PAGE_ALIGN(reinterpret_cast<ULONG_PTR>(addr) + size + PAGE_SIZE));
+		for (addr = static_cast<const BYTE*>(addr); 
+			addr < end_addr; 
+			addr = reinterpret_cast<const BYTE*>(reinterpret_cast<ULONG_PTR>(addr) + PAGE_SIZE))
+		{
+			CMMU mmu(addr);
+			PAGE_TABLE_ENTRY pte;
+			if (mmu.GetPTE(pte) && !pte.Accessed)
+				DbgPrint("\n\n page not accessed -> BULLSHIT!!! %p \n\n", addr);
+			KeBreak();
+			if (!mmu.GetPTE(pte) || !pte.Accessed)//alter only used pages!!
+				return false;
+		}
+
+		return true;
+	}
 
 	static
 	bool IsWriteable(
@@ -141,6 +184,16 @@ public:
 		CMMU mmu(addr);
 		PAGE_TABLE_ENTRY pte;
 		return (mmu.GetPTE(pte) && pte.Accessed);
+	}
+
+	static
+	bool IsNoExecute(
+		__in const void* addr
+		)
+	{
+		CMMU mmu(addr);
+		PAGE_TABLE_ENTRY pte;
+		return (mmu.GetPTE(pte) && !!pte.NoExecute);
 	}
 
 	static
@@ -261,7 +314,7 @@ private:
 		{
 			CMMU mmu(addr);
 			PAGE_TABLE_ENTRY pte;
-			if (mmu.GetPTE(pte) && (pte.Accessed || pte.Valid))//alter only used pages!!
+			if (mmu.GetPTE(pte))// && (pte.Accessed || pte.Valid))//alter only used pages!!
 			{
 				switch (FLAG)
 				{

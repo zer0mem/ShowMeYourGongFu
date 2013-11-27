@@ -118,10 +118,19 @@ void DbiPatchMemory(
 EXTERN_C __declspec(dllexport) 
 void DbiSetHook(
 	__in HANDLE procId,
-	__inout PARAM_HOOK* dbiParams
+	__in PARAM_HOOK* dbiParams
 	)
 {
 	FastCallMonitor(SYSCALL_SET_ADDRESS_BP, procId, 0, dbiParams);
+}
+
+EXTERN_C __declspec(dllexport) 
+	void DbiUnsetAddressBreakpoint(
+	__in HANDLE procId,
+	__in PARAM_HOOK* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_UNSET_ADDRESS_BP, procId, 0, dbiParams);
 }
 
 EXTERN_C __declspec(dllexport) 
@@ -130,16 +139,7 @@ void DbiWatchMemoryAccess(
 	__inout PARAM_MEM2WATCH* dbiParams
 	)
 {
-	FastCallMonitor(SYSCALL_SET_MEMORY_BP, procId, 0, dbiParams);
-}
-
-EXTERN_C __declspec(dllexport) 
-void DbiUnsetAddressBreakpoint(
-	__in HANDLE procId,
-	__inout PARAM_HOOK* dbiParams
-	)
-{
-	FastCallMonitor(SYSCALL_UNSET_ADDRESS_BP, procId, 0, dbiParams);
+	FastCallMonitor(SYSCALL_SET_ACCESS_BP, procId, 0, dbiParams);
 }
 
 EXTERN_C __declspec(dllexport) 
@@ -148,9 +148,44 @@ void DbiUnsetMemoryBreakpoint(
 	__inout PARAM_MEM2WATCH* dbiParams
 	)
 {
-	FastCallMonitor(SYSCALL_UNSET_MEMORY_BP, procId, 0, dbiParams);
+	FastCallMonitor(SYSCALL_UNSET_ACCESS_BP, procId, 0, dbiParams);
 }
 
+EXTERN_C __declspec(dllexport) 
+void DbiSetMemoryWrite(
+	__in HANDLE procId,
+	__inout PARAM_MEM2WATCH* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_SET_WRITE_BP, procId, 0, dbiParams);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiUnSetMemoryWrite(
+	__in HANDLE procId,
+	__inout PARAM_MEM2WATCH* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_UNSET_WRITE_BP, procId, 0, dbiParams);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiSetMemoryExec(
+	__in HANDLE procId,
+	__inout PARAM_MEM2WATCH* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_SET_EXEC_BP, procId, 0, dbiParams);
+}
+
+EXTERN_C __declspec(dllexport) 
+void DbiUnSetMemoryExec(
+	__in HANDLE procId,
+	__inout PARAM_MEM2WATCH* dbiParams
+	)
+{
+	FastCallMonitor(SYSCALL_UNSET_EXEC_BP, procId, 0, dbiParams);
+}
 EXTERN_C __declspec(dllexport) 
 void DbiSuspendThread(
 	__in const CID_ENUM* cid

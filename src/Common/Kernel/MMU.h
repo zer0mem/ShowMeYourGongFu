@@ -91,7 +91,7 @@ static ULONG const MmProtectToValue[32] = {
 enum
 {
 	PAGE_EXE_MASK = 0xF0,
-	PAGE_WR_MASK = 0xCC,
+	PAGE_WR_MASK = 0x44,
 	PAGE_WR_COPY = 0x88,
 };
 

@@ -69,8 +69,6 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 	{
 		if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img_id->Value->ImageName())))
 		{
-			//KeBreak();
-			//after CPE rellocate image!!!
 			CPE pe(imageInfo->ImageBase);
 			const void* func_name;
 			for (size_t i = 0; (func_name = CConstants::InAppExtRoutines(i)); i++)

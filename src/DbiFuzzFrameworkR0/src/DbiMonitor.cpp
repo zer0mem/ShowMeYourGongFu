@@ -214,21 +214,14 @@ EXTERN_C void* SysCallCallback(
 	)
 {
 	CProcess2Fuzz* fuzzed_proc;
-	if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
+	//handle tracer fast-calls
+	HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
+	if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
 	{
-		if (fuzzed_proc->Syscall(reg))
-			return NULL;
-	}
-	else
-	{
-		//handle tracer fast-calls
-		if (FAST_CALL == reg[DBI_SYSCALL] && reinterpret_cast<ULONG_PTR>(PsGetCurrentProcessId()) != reg[DBI_FUZZAPP_PROC_ID])
+		if (CDbiMonitor::GetInstance().GetProcess(proc_id, &fuzzed_proc))
 		{
-			if (CDbiMonitor::GetInstance().GetProcess(reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]), &fuzzed_proc))
-			{
-				if (fuzzed_proc->Syscall(reg))
-					return NULL;
-			}
+			if (fuzzed_proc->Syscall(reg))
+				return NULL;
 		}
 	}
 	return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));

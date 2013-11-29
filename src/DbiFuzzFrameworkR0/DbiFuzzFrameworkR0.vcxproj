@@ -163,6 +163,7 @@
       <UndefinePreprocessorDefinitions>
       </UndefinePreprocessorDefinitions>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalOptions> %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <ProjectReference>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>

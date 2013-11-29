@@ -232,7 +232,7 @@ bool CProcess2Fuzz::DbiInit(
 	return false;
 }
 
-	__checkReturn
+__checkReturn
 bool CProcess2Fuzz::DbiRemoteTrace( 
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)

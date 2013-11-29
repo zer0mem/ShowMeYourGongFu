@@ -5,11 +5,17 @@ from Shared import *
 from CPU import *
 from os import *
 
+ACCESS = 0
+EXEC = 1
+WRITE = 2
+
 class CDbiFuzzTracer(CCpu):
     def __init__(self, processId):
         CCpu.__init__(self, DBI_OUT_CONTEXT())
         self.m_cid = CID_ENUM(processId, 0)
         self.comm = CCDLL("C:/InAppFuzzDbiModule.dll").GetLib()
+
+        self.m_memBP = {}
 
         self.GetNextFuzzThread = self.comm.GetNextFuzzThread#cid
         self.GetNextFuzzThread.argtypes = [POINTER(CID_ENUM)]
@@ -25,16 +31,24 @@ class CDbiFuzzTracer(CCpu):
         self.SmartTrace.argtypes = [POINTER(CID_ENUM), POINTER(DBI_OUT_CONTEXT)]
 
         self.DbiSetHook = self.comm.DbiSetHook#pid, PARAM_HOOK
-        self.DbiSetHook.argtypes = [c_ulonglong, POINTER(PARAM_HOOK)]
-        
+        self.DbiSetHook.argtypes = [c_ulonglong, POINTER(PARAM_HOOK)]        
         self.DbiUnsetAddressBreakpoint = self.comm.DbiUnsetAddressBreakpoint#pid, PARAM_HOOK
         self.DbiUnsetAddressBreakpoint.argtypes = [c_ulonglong, POINTER(PARAM_HOOK)]
-
+        
         self.DbiWatchMemoryAccess = self.comm.DbiWatchMemoryAccess#pid, PARAM_MEM2WATCH
         self.DbiWatchMemoryAccess.argtypes = [c_ulonglong, POINTER(PARAM_MEM2WATCH)]
-        
         self.DbiUnsetMemoryBreakpoint = self.comm.DbiUnsetMemoryBreakpoint#pid, PARAM_MEM2WATCH
         self.DbiUnsetMemoryBreakpoint.argtypes = [c_ulonglong, POINTER(PARAM_MEM2WATCH)]
+        
+        self.DbiSetMemoryWrite = self.comm.DbiSetMemoryWrite#pid, PARAM_MEM2WATCH
+        self.DbiSetMemoryWrite.argtypes = [c_ulonglong, POINTER(PARAM_MEM2WATCH)]
+        self.DbiUnSetMemoryWrite = self.comm.DbiUnSetMemoryWrite#pid, PARAM_MEM2WATCH
+        self.DbiUnSetMemoryWrite.argtypes = [c_ulonglong, POINTER(PARAM_MEM2WATCH)]
+
+        self.DbiSetMemoryExec = self.comm.DbiSetMemoryExec#pid, PARAM_MEM2WATCH
+        self.DbiSetMemoryExec.argtypes = [c_ulonglong, POINTER(PARAM_MEM2WATCH)]
+        self.DbiUnSetMemoryExec = self.comm.DbiUnSetMemoryExec#pid, PARAM_MEM2WATCH
+        self.DbiUnSetMemoryExec.argtypes = [c_ulonglong, POINTER(PARAM_MEM2WATCH)]        
 
         self.DbiEnumMemory = self.comm.DbiEnumMemory#pid, MEMORY_ENUM
         self.DbiEnumMemory.argtypes = [c_ulonglong, POINTER(MEMORY_ENUM)]
@@ -94,16 +108,23 @@ class CDbiFuzzTracer(CCpu):
         #'freeze' means get callback to tracer to given thread with signalized state that
         #this is not its own breakpoint! and not unset it!!!
         #unset this breakpoint should only thread for what is this breakpoint supposed ...!
-        print("reason : ", self.GetReason())
+        #print("reason : ", self.GetReason())
         if (Hook == self.__Context__().TraceInfo.Reason):            
             hook = PARAM_HOOK(self.GetIp())
             self.DbiUnsetAddressBreakpoint(self.m_cid.ProcId, pointer(hook))
-            print("ADRESS HOOK")
+            #print("ADRESS HOOK")
         elif (MemoryAccess == self.GetReason()):            
             mem2watch = PARAM_MEM2WATCH(self.__Context__().MemoryInfo.Begin, self.__Context__().MemoryInfo.Size - 1)
-            print(hex(self.__Context__().MemoryInfo.OriginalValue), " <--- original value")
-            self.DbiUnsetMemoryBreakpoint(self.m_cid.ProcId, pointer(mem2watch))
-            print("MEMORY HOOK")
+            #print(hex(self.__Context__().MemoryInfo.OriginalValue), " <--- original value")
+            
+            if (EXEC == self.m_memBP[self.__Context__().MemoryInfo.Begin]):
+                self.DbiUnSetMemoryExec(self.m_cid.ProcId, pointer(mem2watch))
+            elif (WRITE == self.m_memBP[self.__Context__().MemoryInfo.Begin]):
+                self.DbiUnSetMemoryWrite(self.m_cid.ProcId, pointer(mem2watch))
+            else:
+                self.DbiUnsetMemoryBreakpoint(self.m_cid.ProcId, pointer(mem2watch))
+                
+            #print("MEMORY HOOK")
             
         return self.__Context__().TraceInfo.StateInfo.IRet.Return
     
@@ -130,11 +151,24 @@ class CDbiFuzzTracer(CCpu):
         hook = PARAM_HOOK(ip)
         #ThreadId logic should be placed here == no ThreadId passed to DbiSetHook
         self.DbiSetHook(self.m_cid.ProcId, pointer(hook))
-
-    def SetMemoryBreakpoint(self, mem, size):
+                                                                        
+    def SetMemoryAccessBreakpoint(self, mem, size):
         mem2watch = PARAM_MEM2WATCH(mem, size)
         #ThreadId logic should be placed here == no ThreadId passed to DbiWatchMemoryAccess
         self.DbiWatchMemoryAccess(self.m_cid.ProcId, pointer(mem2watch))
+        self.m_memBP[mem2watch.Memory] = ACCESS
+                                                                    
+    def SetMemoryExecBreakpoint(self, mem, size):
+        mem2watch = PARAM_MEM2WATCH(mem, size)
+        #ThreadId logic should be placed here == no ThreadId passed to DbiWatchMemoryAccess
+        self.DbiSetMemoryExec(self.m_cid.ProcId, pointer(mem2watch))
+        self.m_memBP[mem2watch.Memory] = EXEC
+
+    def SetMemoryWriteBreakpoint(self, mem, size):
+        mem2watch = PARAM_MEM2WATCH(mem, size)
+        #ThreadId logic should be placed here == no ThreadId passed to DbiWatchMemoryAccess
+        self.DbiSetMemoryWrite(self.m_cid.ProcId, pointer(mem2watch))
+        self.m_memBP[mem2watch.Memory] = WRITE
 
 #thread non-specific -> memory access
     def NextMemory(self, mem):
@@ -151,7 +185,8 @@ class CDbiFuzzTracer(CCpu):
         
         buff = BYTE_BUFFER()
         for i in range(0, size, len(buff.Bytes)):
-            self.DbiDumpMemory(self.m_cid.ProcId, mem, pointer(buff), len(buff.Bytes))
+            print("readed mem : ", hex(mem + i))
+            self.DbiDumpMemory(self.m_cid.ProcId, mem + i, pointer(buff), len(buff.Bytes))
             buffer[i : i + len(buff.Bytes)] = buff.Bytes
 
         if (size % len(buff.Bytes)):

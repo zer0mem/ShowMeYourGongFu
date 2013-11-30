@@ -111,6 +111,7 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 //--------------------------------------------------------
 
 #include "DbiMonitor.h"
+extern bool gInstalled;
 extern size_t gCount;
 __checkReturn
 bool CProcess2Fuzz::PageFault( 
@@ -153,6 +154,11 @@ bool CProcess2Fuzz::PageFault(
 		CThreadEvent* fuzz_thread;
 		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
+
+			//KeBreak();
+			if (0 == gCount++ % 0x1000000)
+				DbgPrint("\nCurrent count of BB is raised by 0x10000 to %p\n", gCount);
+
 			// { ************************** if no monitor-thread paired then just freeze this thread!!
 			CImage* img;			
 			if (fuzz_thread->IsNecessaryToFreeze() && m_extRoutines[ExtWaitForDbiEvent] && 
@@ -163,6 +169,7 @@ bool CProcess2Fuzz::PageFault(
 				{
 					fuzz_thread->FreezeNotNecessary();
 					ret = pf_iret->IRet.Return;
+					gInstalled = true;
 				}
 			}
 			// } ************************** if no monitor-thread paired then just freeze this thread!!
@@ -214,11 +221,7 @@ bool CProcess2Fuzz::PageFault(
 					pf_iret->IRet.StackPointer -= IRetCount;
 					//KeWaitForDbiEvent ...
 					pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
-
-					//KeBreak();
-					if (0 == gCount++ % 0x1000000)
-						DbgPrint("\nCurrent count of BB is raised by 0x10000 to %p\n", gCount);
-
+					
 					return true;
 				}
 			}

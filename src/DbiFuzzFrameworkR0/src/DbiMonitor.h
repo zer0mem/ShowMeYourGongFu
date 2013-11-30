@@ -20,6 +20,7 @@
 #include "../../Common/utils/Queue.hpp"
 
 extern size_t gCount;
+extern size_t xCount;
 
 //need to refactor and clean up this messy class .. 
 class CDbiMonitor : 

@@ -142,7 +142,7 @@ void CDbiMonitor::PerCoreAction(
 		//rdmsr / wrmsr dont affect guest MSR!!!!!!! -> vmwrite / read use instead
 
 		m_syscalls[coreId] = reinterpret_cast<void*>(rdmsr(IA64_SYSENTER_EIP));
-		HookSyscallMSR(sysenter);
+		//HookSyscallMSR(sysenter);
 
 		DbgPrint("Hooked. procid [%x] <=> syscall addr [%p]\n", coreId, m_syscalls[coreId]);
 	}
@@ -232,7 +232,7 @@ EXTERN_C void* SysCallCallback(
 	}
 	return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
 }
-
+bool gInstalled = false;
 //************************************
 // Method:    PageFault
 // FullName:  PageFault
@@ -246,6 +246,8 @@ EXTERN_C void* PageFault(
 	)
 {
 	//in kernelmode can cause another PF and skip recursion handling :P
+	if (!gInstalled)
+	{
 
 	//previous mode == usermode ?
 #define USER_MODE_CS 0x1
@@ -260,6 +262,8 @@ EXTERN_C void* PageFault(
 				return NULL;
 		}
 	}
+
+	}
 	return CDbiMonitor::GetInstance().GetPFHandler(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
 }
 
@@ -268,7 +272,7 @@ EXTERN_C void* PageFault(
 // ****************** HYPERVISOR EVENTS ******************
 //--------------------------------------------------------
 
-size_t gCount = 0;
+size_t gCount;
 //************************************
 // Method:    VMMEXCEPTION
 // FullName:  CDbiMonitor::VMMEXCEPTION
@@ -313,7 +317,7 @@ void CDbiMonitor::VMMEXCEPTION(
 				}
 			}
 			*/
-
+			/*
 			CAutoTypeMalloc<TRACE_INFO>* trace_info_container = m_branchInfoStack.Pop();//interlocked NonPage queue
 			if (trace_info_container)
 			{
@@ -334,6 +338,9 @@ void CDbiMonitor::VMMEXCEPTION(
 					return;//is handled!
 				}
 			}
+			*/
+			gCount++;
+			return;
 		}
 
 		//post handling of kernel code
@@ -403,10 +410,7 @@ void CDbiMonitor::VMMCPUID(
 		if (0xBADF00D0 == (ULONG)reg[RAX])
 		{
 			reg[RBX] = 0xBADF00D0;
-
-			ULONG_PTR rflags = 0;
-			vmread(VMX_VMCS_GUEST_RFLAGS, &rflags);
-			vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags | TRAP));
+			//gCount++;
 		}
 	}
 }

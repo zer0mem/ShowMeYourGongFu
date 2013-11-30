@@ -248,6 +248,11 @@ bool CThreadEvent::SmartTrace(
 	return false;
 }
 
+void CThreadEvent::FreezeNotNecessary()
+{
+	m_dbgThreadInfo.FreezeRequested = false;
+}
+
 __checkReturn
 bool DBI_THREAD_EVENT::LoadContext( 
 	__in ULONG_PTR reg[REG_COUNT] 

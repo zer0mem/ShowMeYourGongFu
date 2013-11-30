@@ -193,3 +193,19 @@ void DbiSuspendThread(
 {
 	FastCallMonitor(SYSCALL_FREEZE_THREAD, cid->ProcId.Value, cid->ThreadId.Value, NULL);
 }
+
+#include <stdio.h>
+
+size_t gCount = 0;
+
+EXTERN_C void ExtMain(
+	__inout ULONG_PTR reg[REG_COUNT]
+	)
+{
+#define TRAP 0x100
+
+	gCount++;
+
+	IRET* iret = reinterpret_cast<IRET*>(HOOK_ORIG_RSP(reg));
+	iret->Flags |= TRAP;
+}

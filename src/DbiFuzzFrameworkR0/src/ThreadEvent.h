@@ -180,6 +180,8 @@ public:
 		__in ULONG_PTR reason
 		);
 
+	void FreezeNotNecessary();
+
 	__checkReturn
 	__forceinline
 	bool ResolveThread()

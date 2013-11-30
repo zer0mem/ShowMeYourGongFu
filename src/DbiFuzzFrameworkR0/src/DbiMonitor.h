@@ -19,6 +19,8 @@
 
 #include "../../Common/utils/Queue.hpp"
 
+extern size_t gCount;
+
 //need to refactor and clean up this messy class .. 
 class CDbiMonitor : 
 	public CCRonos,
@@ -59,6 +61,7 @@ public:
 	static
 	void CreateThread()
 	{
+		gCount = 0;
 		KeBreak();
 		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoStack.Create();
 		if (trace_info)
@@ -71,6 +74,7 @@ public:
 	static
 	void RemoveThread()
 	{
+		DbgPrint("\n\n----------------------------------\n->total instruction breaked at : %x\n----------------------------------\n\n", gCount);
 		KeBreak();
 		//add if -> for if not succesfull create thread .. some kind of counter ...
 		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoStack.Pop();

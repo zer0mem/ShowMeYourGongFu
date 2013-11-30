@@ -53,7 +53,7 @@ bool CProcess2Fuzz::WatchProcess(
 	}
 	return false;
 }
-
+void* gMainBase = NULL;
 void CProcess2Fuzz::ImageNotifyRoutine( 
 	__in_opt UNICODE_STRING* fullImageName, 
 	__in HANDLE processId,
@@ -61,6 +61,9 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 	)
 {
 	CProcessContext::ImageNotifyRoutine(fullImageName, processId, imageInfo);
+
+	if (!gMainBase)
+		gMainBase = imageInfo->ImageBase;
 
 	IMAGE* img_id;
 	CRange<void> img(imageInfo->ImageBase);
@@ -108,7 +111,7 @@ bool CProcess2Fuzz::VirtualMemoryCallback(
 //--------------------------------------------------------
 
 #include "DbiMonitor.h"
-
+extern size_t gCount;
 __checkReturn
 bool CProcess2Fuzz::PageFault( 
 	__in BYTE* faultAddr, 
@@ -145,21 +148,21 @@ bool CProcess2Fuzz::PageFault(
 			return false;//not handled! -> process original PageFault handler!!!
 		}
 		// } ************************** touching memory by kernel!
-
-		bool handled = false;
+		
+		void* ret = NULL;
 		CThreadEvent* fuzz_thread;
 		if (GetFuzzThread(PsGetCurrentThreadId(), &fuzz_thread))
 		{
 			// { ************************** if no monitor-thread paired then just freeze this thread!!
-			if (fuzz_thread->IsNecessaryToFreeze() && m_extRoutines[ExtWaitForDbiEvent])
+			CImage* img;			
+			if (fuzz_thread->IsNecessaryToFreeze() && m_extRoutines[ExtWaitForDbiEvent] && 
+				GetImage(gMainBase, &img) && img && img->Image().IsInRange(pf_iret->IRet.Return))//from main image ?
 			{
 				//freeze in user mode!!
 				if (IsUserModeAddress(pf_iret->IRet.Return))
 				{
-					if (fuzz_thread->FreezeThread(reg, pf_iret))
-						handled = true;
-					else
-						DbgPrint("\n\n FREEZE ACC FAIL\n\n");
+					fuzz_thread->FreezeNotNecessary();
+					ret = pf_iret->IRet.Return;
 				}
 			}
 			// } ************************** if no monitor-thread paired then just freeze this thread!!
@@ -173,10 +176,7 @@ bool CProcess2Fuzz::PageFault(
 				}
 				
 				if (!CMMU::IsValid(faultAddr))
-				{
-					if (fuzz_thread->RegisterMemoryAccess(reg, faultAddr, mem, pf_iret))
-						handled = true;
-				}
+					ret = pf_iret->IRet.Return;
 			}
 			// } ************************** HANDLE PROTECTED MEMORY ACCESS ************************** 
 
@@ -192,11 +192,8 @@ bool CProcess2Fuzz::PageFault(
 					TRACE_INFO* trace_info = trace_info_container->GetMemory();
 					if (fuzz_thread->GetStack().IsInRange(trace_info->StateInfo.IRet.StackPointer))
 					{
-						if (fuzz_thread->SmartTraceEvent(reg, trace_info, pf_iret))
-							handled = true;
-						else
-							DbgPrint("\n\n TRAP ACC FAIL\n\n");
-
+						ret = trace_info->StateInfo.IRet.Return;
+					
 						//push back to trace_info queue
 						CDbiMonitor::m_branchInfoStack.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info_container));
 					}
@@ -205,11 +202,25 @@ bool CProcess2Fuzz::PageFault(
 			// } ************************** HANDLE HV TRAP EXIT ************************** 
 
 
-			if (handled)
+			if (ret)
 			{
-				//KeWaitForDbiEvent ...
-				pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
-				return true;
+				//CMdl auto_iret(pf_iret->IRet.StackPointer - IRetCount, sizeof(IRET));
+				IRET* iret = reinterpret_cast<IRET*>(pf_iret->IRet.StackPointer - IRetCount);//static_cast<IRET*>(auto_iret.ForceWritePtrUser());
+				if (iret)
+				{
+					*iret = pf_iret->IRet;
+					iret->Return = ret; 
+
+					pf_iret->IRet.StackPointer -= IRetCount;
+					//KeWaitForDbiEvent ...
+					pf_iret->IRet.Return = const_cast<void*>(m_extRoutines[ExtWaitForDbiEvent]);
+
+					//KeBreak();
+					if (0 == gCount++ % 0x1000000)
+						DbgPrint("\nCurrent count of BB is raised by 0x10000 to %p\n", gCount);
+
+					return true;
+				}
 			}
 		}
 	}

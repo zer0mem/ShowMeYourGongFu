@@ -200,6 +200,7 @@ void CDbiMonitor::InstallPageFaultHooks()
 // ****************** MONITORING CALLBACKS ******************
 //-----------------------------------------------------------
 
+size_t gLastCount = 0;
 //handle virtual protection / allocation methods
 //************************************
 // Method:    SysCallCallback
@@ -210,10 +211,15 @@ void CDbiMonitor::InstallPageFaultHooks()
 // Parameter: register context, INOUT!
 //************************************
 EXTERN_C void* SysCallCallback( 
-	__inout ULONG_PTR reg [REG_COUNT]
+	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
 	CProcess2Fuzz* fuzzed_proc;
+	if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
+	{
+		DbgPrint("\n\n::::::::::::::::::::::::::::::::::\n->instruction breaked between SYSCALLS : %x\n::::::::::::::::::::::::::::::::::\n\n", (gCount - gLastCount));
+		gLastCount = gCount;
+	}
 	//handle tracer fast-calls
 	HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
 	if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
@@ -262,6 +268,7 @@ EXTERN_C void* PageFault(
 // ****************** HYPERVISOR EVENTS ******************
 //--------------------------------------------------------
 
+size_t gCount = 0;
 //************************************
 // Method:    VMMEXCEPTION
 // FullName:  CDbiMonitor::VMMEXCEPTION
@@ -284,6 +291,7 @@ void CDbiMonitor::VMMEXCEPTION(
 		if (IsUserModeAddress(vmm_exit.GetIp()))
 		{
 			vmm_exit.SetIp(reinterpret_cast<const BYTE*>(vmm_exit.GetIp()) - vmm_exit.GetInsLen());
+			/*
 			ULONG_PTR msr_btf_part;
 			if (!vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part))
 			{
@@ -304,6 +312,7 @@ void CDbiMonitor::VMMEXCEPTION(
 					}
 				}
 			}
+			*/
 
 			CAutoTypeMalloc<TRACE_INFO>* trace_info_container = m_branchInfoStack.Pop();//interlocked NonPage queue
 			if (trace_info_container)
@@ -317,7 +326,6 @@ void CDbiMonitor::VMMEXCEPTION(
 					trace_info->StateInfo.IRet.Flags = vmm_exit.GetFlags();
 
 					//set eip to non-exec mem for quick recognization by PageFault handler
-					vmm_exit.SetSp(&trace_info->StateInfo.IRet.StackPointer[-(IRetCount + REG_COUNT + 1)]);
 					vmm_exit.SetIp(trace_info_container);
 
 					if (vmm_exit.IsTrapActive())

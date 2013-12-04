@@ -20,10 +20,14 @@ EXTERN_C void sysenter();
 EXTERN_C void rdmsr_hook();
 EXTERN_C void pagafault_hook();
 EXTERN_C void patchguard_hook();
+EXTERN_C void trap_hook();
 
 CDbiMonitor CDbiMonitor::m_instance;
 
 void* CDbiMonitor::m_pageFaultHandlerPtr[MAX_PROCID];
+
+void* CDbiMonitor::m_trapHandlerPtr[MAX_PROCID];
+
 
 CStack< CAutoTypeMalloc<TRACE_INFO> > CDbiMonitor::m_branchInfoStack;
 
@@ -32,6 +36,7 @@ CDbiMonitor::CDbiMonitor() :
 {
 	RtlZeroMemory(m_syscalls, sizeof(m_syscalls));
 	RtlZeroMemory(m_pageFaultHandlerPtr, sizeof(m_pageFaultHandlerPtr));
+	RtlZeroMemory(m_trapHandlerPtr, sizeof(m_trapHandlerPtr));
 }
 
 CDbiMonitor::~CDbiMonitor()
@@ -69,10 +74,11 @@ bool CDbiMonitor::SetVirtualizationCallbacks()
 	if (!CCRonos::SetVirtualizationCallbacks())
 		return false;
 
-	m_traps[VMX_EXIT_RDMSR] = reinterpret_cast<ULONG_PTR>(VMMRDMSR);
-	m_traps[VMX_EXIT_WRMSR] = reinterpret_cast<ULONG_PTR>(VMMWRMSR);
+	//m_traps[VMX_EXIT_RDMSR] = reinterpret_cast<ULONG_PTR>(VMMRDMSR);
+	//m_traps[VMX_EXIT_WRMSR] = reinterpret_cast<ULONG_PTR>(VMMWRMSR);
 	m_traps[VMX_EXIT_EXCEPTION] = reinterpret_cast<ULONG_PTR>(VMMEXCEPTION);
 
+	return true;
 	//disable patchguard
 	RegisterCallback(m_callbacks, AntiPatchGuard);
 
@@ -127,6 +133,7 @@ void CDbiMonitor::Install()
 // Reason:    Hook SYSCALL in MSR[IA64_SYSENTER_EIP]
 // Parameter: __in BYTE coreId
 //************************************
+ULONG_PTR gDebugCtlBtfLbr = 0;
 void CDbiMonitor::PerCoreAction( 
 	__in BYTE coreId 
 	)
@@ -138,7 +145,8 @@ void CDbiMonitor::PerCoreAction(
 		KeSetSystemAffinityThread(PROCID(coreId));
 
 		//set branching on basig blocks!!! + turn on last branch stack!
-		wrmsr(IA32_DEBUGCTL, (rdmsr(IA32_DEBUGCTL) | BTF | LBR));
+		gDebugCtlBtfLbr = (rdmsr(IA32_DEBUGCTL) | BTF | LBR);
+		wrmsr(IA32_DEBUGCTL, gDebugCtlBtfLbr);
 		//rdmsr / wrmsr dont affect guest MSR!!!!!!! -> vmwrite / read use instead
 
 		m_syscalls[coreId] = reinterpret_cast<void*>(rdmsr(IA64_SYSENTER_EIP));
@@ -186,6 +194,23 @@ void CDbiMonitor::InstallPageFaultHooks()
 						idt[TRAP_page_fault].Offset = reinterpret_cast<WORD>(pagafault_hook);
 						idt[TRAP_page_fault].Selector = static_cast<WORD>(reinterpret_cast<ULONG>(pagafault_hook) >> 16);
 					}
+
+#ifndef HYPERVISOR
+
+					CDbiMonitor::GetInstance().SetTRAPHandler(core_id, reinterpret_cast<void*>(
+						((static_cast<ULONG_PTR>(idt[TRAP_debug].ExtendedOffset) << 32) | 
+						(static_cast<ULONG>(idt[TRAP_debug].Selector) << 16) | 
+						idt[TRAP_debug].Offset)) );
+
+					//hook ...
+					{
+						CDisableInterrupts cli_sti;
+						idt[TRAP_debug].ExtendedOffset = ((reinterpret_cast<ULONG_PTR>(trap_hook)) >> 32);
+						idt[TRAP_debug].Offset = reinterpret_cast<WORD>(trap_hook);
+						idt[TRAP_debug].Selector = static_cast<WORD>(reinterpret_cast<ULONG>(trap_hook) >> 16);
+					}
+
+#endif
 
 					DbgPrint("\r\nIDT HOOKED %x\r\n", core_id);
 				}
@@ -267,6 +292,45 @@ EXTERN_C void* PageFault(
 	return CDbiMonitor::GetInstance().GetPFHandler(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
 }
 
+//************************************
+// Method:    TrapOrFault
+// FullName:  TrapOrFault
+// Access:    public 
+// Returns:   EXTERN_C void*
+// Reason:    Intercepting Trap event [ IDT hook ]
+// Parameter: register context, INOUT!
+//************************************
+size_t gAllBB;
+int recursive(int i = 0)
+{
+	if (3 == i)
+		return 1;
+	if (!i)
+		return recursive(i + 1);
+	return recursive(i + 2);
+}
+
+EXTERN_C void* TrapOrFault(
+	__inout ULONG_PTR reg[REG_COUNT]
+	)
+{
+	//previous mode == usermode ?
+#define USER_MODE_CS 0x1
+	if (PPAGE_FAULT_IRET(reg)->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
+	{
+		//CProcess2Fuzz* fuzzed_proc;
+		//if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))//get min perfomance impact
+		{
+			wrmsr(IA32_DEBUGCTL, gDebugCtlBtfLbr);//bracn stepping
+			//PFIRET* iret = PPAGE_FAULT_IRET(reg);
+			//DbgPrint("\n\n$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n$TRAP : %p %p %p $\n$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n\n", iret->IRet.Return, iret->IRet.Flags, iret->IRet.StackPointer);
+			//KeBreak();
+			gCount += recursive();
+			return NULL;//handled ?
+		}
+	}
+	return CDbiMonitor::GetInstance().GetTRAPHandler(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
+}
 
 //--------------------------------------------------------
 // ****************** HYPERVISOR EVENTS ******************
@@ -546,4 +610,16 @@ bool CDbiMonitor::GetProcess(
 	)
 {
 	return m_procMonitor.GetProcessWorker().GetProcess(processId, process);
+}
+void* CDbiMonitor::GetTRAPHandler( __in BYTE coreId )
+{
+	if (coreId < MAX_PROCID)
+		return CDbiMonitor::m_trapHandlerPtr[coreId];
+	return NULL;
+}
+
+void CDbiMonitor::SetTRAPHandler( __in BYTE coreId, __in void* pfHndlr )
+{
+	if (coreId < MAX_PROCID)
+		CDbiMonitor::m_trapHandlerPtr[coreId] = pfHndlr;
 }

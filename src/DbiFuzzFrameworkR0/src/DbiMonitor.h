@@ -21,6 +21,7 @@
 
 extern size_t gCount;
 extern size_t xCount;
+extern size_t gAllBB;
 
 //need to refactor and clean up this messy class .. 
 class CDbiMonitor : 
@@ -49,6 +50,17 @@ public:
 		__in BYTE coreId, 
 		__in void* pfHndlr 
 		);
+	
+	static
+	void* GetTRAPHandler(
+		__in BYTE coreId
+		);
+
+	static
+	void SetTRAPHandler( 
+		__in BYTE coreId, 
+		__in void* pfHndlr 
+		);	
 
 	__forceinline
 	__checkReturn
@@ -63,6 +75,7 @@ public:
 	void CreateThread()
 	{
 		gCount = 0;
+		gAllBB = 0;
 		KeBreak();
 		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoStack.Create();
 		if (trace_info)
@@ -75,7 +88,7 @@ public:
 	static
 	void RemoveThread()
 	{
-		DbgPrint("\n\n----------------------------------\n->total instruction breaked at : %x\n----------------------------------\n\n", gCount);
+		DbgPrint("\n\n----------------------------------\n->total instruction breaked at : %x (%p)\n----------------------------------\n\n", gCount, gAllBB);
 		KeBreak();
 		//add if -> for if not succesfull create thread .. some kind of counter ...
 		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoStack.Pop();
@@ -129,6 +142,7 @@ protected:
 protected:
 	void* m_syscalls[MAX_PROCID];
 	static void* m_pageFaultHandlerPtr[MAX_PROCID];
+	static void* m_trapHandlerPtr[MAX_PROCID];
 };
 
 #endif //__SYSENETER_H__

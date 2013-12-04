@@ -87,6 +87,7 @@ struct PFIRET
 #pragma pack(pop)
 
 #define PPAGE_FAULT_IRET(reg) reinterpret_cast<PFIRET*>(HOOK_ORIG_RSP(reg))//skip unknown param
+#define TARP_FAULT_IRET(reg) reinterpret_cast<IRET*>(HOOK_ORIG_RSP(reg))//skip unknown param
 
 #define ALIGN(addr, granularity)	(ULONG_PTR)((ULONG_PTR)(addr) & (~((granularity) - 1)))
 

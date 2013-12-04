@@ -72,7 +72,7 @@ ULONG_PTR CHyperVisor::HVEntryPoint(
 	__in VOID* param 
 	)
 {
-	(*(void (*)(ULONG_PTR*, const void*))(m_callback))(reg, param);
+	//(*(void (*)(ULONG_PTR*, const void*))(m_callback))(reg, param);
 
 	ULONG_PTR ExitReason;
 	vmread(VMX_VMCS32_RO_EXIT_REASON, &ExitReason);

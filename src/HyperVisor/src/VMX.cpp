@@ -8,6 +8,7 @@
 #include "VMX.h"
 #include "../../Common/Kernel/IRQL.hpp"
 #include "../../Common/Kernel/MemoryMapping.h"
+#include "../../Common/base/Common.h"
 
 CVmx::CVmx(
 	__in KAFFINITY procId,
@@ -156,7 +157,7 @@ bool CVmx::VmcsInit()
 
 	vmwrite(VMX_VMCS_HOST_RSP, m_guestState.HRSP);
 	vmwrite(VMX_VMCS_HOST_RIP, m_guestState.HRIP);
-
+	
 	if (m_exceptionhandling)
 	{
 		//activate exception handling
@@ -173,12 +174,13 @@ bool CVmx::VmcsInit()
 #ifdef _DEBUG_MODE
 		unsigned long mask = BTS(TRAP_debug);// | BTS(TRAP_int3);// | BTS(TRAP_page_fault);
 #else
-		unsigned long mask = BTS(TRAP_debug) | BTS(TRAP_int3);// | BTS(TRAP_page_fault);
+		unsigned long mask = BTS(TRAP_debug) | BTS(TRAP_int3) | BTS(TRAP_page_fault);
 #endif
 
 		intercepts |= mask;
 		vmwrite(VMX_VMCS_CTRL_EXCEPTION_BITMAP, intercepts);
 	}
+	
 
 	
 	//handle pagefault via VMX_EXIT_EPT_VIOLATION

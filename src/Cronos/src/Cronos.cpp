@@ -71,7 +71,7 @@ __checkReturn bool CCRonos::SetVirtualizationCallbacks()
 {
 	DbgPrint("CCRonos::SetVirtualizationCallbacks\n");
 	m_traps[VMX_EXIT_CPUID] = (ULONG_PTR)HVCpuid;
-
+	return true;
 	return (RegisterCallback(m_callbacks, HVCallback1) &&
 			RegisterCallback(m_callbacks, HVCallback2) &&
 			RegisterCallback(m_callbacks, HVCallback3));

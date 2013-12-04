@@ -3,6 +3,8 @@ extrn RdmsrHook:proc
 extrn PageFault:proc
 extrn PatchGuardHook:proc
 
+extrn TrapOrFault:proc
+
 include ..\Common\amd64\common.inc
 
 .code
@@ -118,5 +120,34 @@ rtdsc_check proc
 	pop rsi
 	ret
 rtdsc_check endp
+
+
+trap_hook proc
+;previous mode kernel mode ??
+	sub rsp, 8
+	test byte ptr [rsp + 2 * sizeof(QWORD)], 1
+	je @noswap_prolog
+	swapgs
+
+@noswap_prolog:
+	ENTER_HOOK_PROLOGUE	
+	ENTER_HOOK TrapOrFault
+	
+	test byte ptr  [rsp + 3 * sizeof(QWORD)], 1
+	je @noswap_epilog
+	swapgs
+
+@noswap_epilog:
+	cmp rax, 0
+	ENTER_HOOK_EPILOGUE
+	jz @access_allowed	
+	;HAHAHA -> TODO add rsp, 8; or add [rsp], sizeof(sub rsp, 8)
+	ret 
+
+@access_allowed:
+	popptr;pop original nt!kipagefault
+	popptr;previous mode
+	iretq ; return back to user mode
+trap_hook endp
 
 end

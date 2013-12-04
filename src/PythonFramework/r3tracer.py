@@ -61,36 +61,35 @@ def main(pid):
             break
 
     tracer.SingleStep(tracer.GetIp())
-    mmodule = tracer.GetModule("codecoverme")
-    print("start")
     
+    target = tracer.GetModule("codecoverme")
     dis = CDisasm(tracer)
     for i in range(0, 3):
-        print("next round")
+        print("next access")
         
         tracer.SetMemoryBreakpoint(0x2340000, 0x400)
         tracer.Go(tracer.GetIp())
         
         inst = dis.Disasm(tracer.GetIp())       
-
-        print(hex(inst.VirtualAddr), " : ", inst.CompleteInstr)
+        print(hex(inst.VirtualAddr), " : ", 
+              inst.CompleteInstr)
         
         tracer.SingleStep(tracer.GetIp())
 
         
-    for i in range(0, 50):
+    for i in range(0, 0xffffffff):
         
-        if (mmodule.Begin > tracer.GetIp() or mmodule.Begin + mmodule.Size < tracer.GetIp()):            
-            tracer.SetAddressBreakpoint(tracer.ReadPtr(tracer.GetRsp()))
-            tracer.Go(tracer.GetIp())
-            print("HOOKED")
+        if (target.Begin > tracer.GetIp() or 
+            target.Begin + target.Size < tracer.GetIp()):            
             
-        Instruction.VirtualAddr = tracer.GetPrevIp()
-        code = tracer.ReadMemory(Instruction.VirtualAddr, 0x100)
-        Instruction.EIP = addressof(code)
-
-        Disasm(addressof(Instruction))
-        print(hex(Instruction.VirtualAddr), " : ", Instruction.CompleteInstr)
+            ret = tracer.ReadPtr(tracer.GetRsp())
+            tracer.SetAddressBreakpoint(ret)
+            tracer.Go(tracer.GetIp())
+            print("out-of-module-hook")
+        
+        inst = dis.Disasm(tracer.GetPrevIp())       
+        print(hex(inst.VirtualAddr), " : ", 
+              inst.CompleteInstr)
         
         tracer.BranchStep(tracer.GetIp())
     

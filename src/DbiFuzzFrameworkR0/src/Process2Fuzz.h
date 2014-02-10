@@ -7,6 +7,7 @@
 #define __FUZZPROCESS_H__
 
 #include "../../Common/base/Common.h"
+#include "../../Common/base/RefCounter.hpp"
 #include "Common/Constants.h"
 #include "../../Common/utils/ProcessCtx.h"
 #include "../../Common/utils/LockedContainers.hpp"
@@ -17,7 +18,8 @@
 
 class CProcess2Fuzz : 
 	public CProcessContext<CThreadEvent, CHILD_PROCESS, CImage>,
-	public CSyscallCallbacks
+	public CSyscallCallbacks,
+	public CRefCounter
 {
 public:
 	explicit CProcess2Fuzz(
@@ -73,10 +75,10 @@ protected:
 		)
 	{
 		THREAD* thread;
-		if (m_threads.Find(threadId, &thread) && thread->Value)
+		if (m_threads.Find(threadId, &thread) && thread->Obj)
 		{
 			if (fuzzThread)
-				*fuzzThread = thread->Value;
+				*fuzzThread = thread->Obj;
 			return true;
 		}
 		return false;
@@ -90,10 +92,10 @@ protected:
 		)
 	{
 		IMAGE* img_info;
-		if (m_loadedImgs.Find(CRange<void>(addr), &img_info) && img_info->Value)
+		if (m_loadedImgs.Find(CRange<void>(addr), &img_info) && img_info->Obj)
 		{
 			if (img)
-				*img = img_info->Value;
+				*img = img_info->Obj;
 			return true;
 		}
 		return false;
@@ -166,6 +168,8 @@ protected:
 	bool m_installed;
 
 	CLockedAVL<CMemoryRange> m_mem2watch;
+
+	CVadScanner m_vad;
 
 	const void* m_extRoutines[ExtCount];
 };

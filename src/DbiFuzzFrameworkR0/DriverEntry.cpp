@@ -8,8 +8,6 @@
 #include "../Common/utils/Undoc.hpp"
 #include "Common/Constants.h"
 
-PDRIVER_OBJECT gDriverObject;
-
 EXTERN_C
 void __cdecl doexit(
 	__in int /*code*/, 
@@ -35,6 +33,7 @@ void EnviromentDependentVariablesInit()
 		VADWorkingSetMutex,
 		VADFlags,
 		VADSameThreadApcFlags,
+		0x090,// TrapFrame : Ptr64 _KTRAP_FRAME
 		offsetof(_MM_AVL_TABLE, BalancedRoot),
 		offsetof(_MM_AVL_TABLE, AvlInfo),
 		(~0x3),

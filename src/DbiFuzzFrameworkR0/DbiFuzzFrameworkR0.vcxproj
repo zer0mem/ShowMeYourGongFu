@@ -40,7 +40,7 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <CharacterSet>NotSet</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>WindowsKernelModeDriver8.0</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -96,6 +96,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LibraryPath>$(VCInstallDir)lib;$(VCInstallDir)atlmfc\lib;$(WindowsSdkDir)lib;$(FrameworkSDKDir)\lib;$(VCInstallDir)lib\amd64;$(VCInstallDir)atlmfc\lib\amd64;$(WindowsSdkDir)lib\x64</LibraryPath>
+    <TargetExt>.sys</TargetExt>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -253,6 +254,7 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <CallingConvention>StdCall</CallingConvention>
       <OmitDefaultLibName>true</OmitDefaultLibName>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <ProjectReference>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
@@ -271,12 +273,12 @@
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
       <TargetMachine>MachineX64</TargetMachine>
       <AllowIsolation>true</AllowIsolation>
+      <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\Common\base\Common.cpp" />
     <ClCompile Include="..\Common\base\libc.cpp" />
-    <ClCompile Include="..\Common\Kernel\Apc.cpp" />
     <ClCompile Include="..\Common\Kernel\MemoryMapping.cpp" />
     <ClCompile Include="..\Common\utils\VADWalker.cpp" />
     <ClCompile Include="Common\Constants.cpp" />
@@ -289,14 +291,19 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\base\AutoMalloc.h" />
+    <ClInclude Include="..\Common\base\AutoObRef.hpp" />
     <ClInclude Include="..\Common\base\Common.h" />
     <ClInclude Include="..\Common\base\ComparableId.hpp" />
     <ClInclude Include="..\Common\base\instrinsics.h" />
+    <ClInclude Include="..\Common\base\RefCounter.hpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="..\Common\base\Shared.h" />
     <ClInclude Include="..\Common\base\Singleton.hpp" />
     <ClInclude Include="..\Common\CPU\msr.h" />
     <ClInclude Include="..\Common\FastCall\FastCall.h" />
     <ClInclude Include="..\Common\Kernel\Apc.h" />
+    <ClInclude Include="..\Common\Kernel\AutoId.hpp" />
     <ClInclude Include="..\Common\Kernel\IRQL.hpp" />
     <ClInclude Include="..\Common\Kernel\Lock.hpp" />
     <ClInclude Include="..\Common\Kernel\MemoryMapping.h" />
@@ -304,6 +311,9 @@
     <ClInclude Include="..\Common\Kernel\MMU.hpp" />
     <ClInclude Include="..\Common\Kernel\Process.hpp" />
     <ClInclude Include="..\Common\Kernel\Thread.hpp" />
+    <ClInclude Include="..\Common\UM\AutoHandle.hpp" />
+    <ClInclude Include="..\Common\UM\PE.hpp" />
+    <ClInclude Include="..\Common\UM\SubProcessTagResolver.hpp" />
     <ClInclude Include="..\Common\utils\AVL.hpp" />
     <ClInclude Include="..\Common\utils\BinTreeWalker.hpp" />
     <ClInclude Include="..\Common\utils\ColdPatcher.hpp" />
@@ -314,9 +324,8 @@
     <ClInclude Include="..\Common\utils\HashString.hpp" />
     <ClInclude Include="..\Common\utils\LockedContainers.hpp" />
     <ClInclude Include="..\Common\utils\MemoryRange.h" />
-    <ClInclude Include="..\Common\utils\PE.hpp" />
+    <ClInclude Include="..\Common\utils\SafePE.hpp" />
     <ClInclude Include="..\Common\utils\ProcessCtx.h" />
-    <ClInclude Include="..\Common\utils\ProcessCtxWorker.hpp" />
     <ClInclude Include="..\Common\utils\ProcessMonitor.hpp" />
     <ClInclude Include="..\Common\utils\Range.h" />
     <ClInclude Include="..\Common\utils\Undoc.h" />

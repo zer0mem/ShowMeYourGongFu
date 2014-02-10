@@ -10,17 +10,6 @@
 #pragma once
 #endif // _MSC_VER > 1000
 
-#ifdef WIN64
- #define _AMD64_
- #define _M_AMD64_
-#else //WIN64
- #define i386 1
- #define _X86_ 1
- #define CONDITION_HANDLING 1
- #define _NT1X_ 100
- #define _WIN32_WINNT 0x0400 /* minimum required OS version */
-#endif //WIN64
-
 #define STD_CALL
 #define NT_INST 0
 #define WINNT 1

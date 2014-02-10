@@ -6,9 +6,6 @@
       <Filter>Common\base</Filter>
     </ClCompile>
     <ClCompile Include="DriverEntry.cpp" />
-    <ClCompile Include="..\Common\Kernel\Apc.cpp">
-      <Filter>Common\Kernel</Filter>
-    </ClCompile>
     <ClCompile Include="..\Common\utils\VADWalker.cpp">
       <Filter>Common\utils</Filter>
     </ClCompile>
@@ -94,9 +91,6 @@
     <ClInclude Include="..\Common\utils\LockedContainers.hpp">
       <Filter>Common\utils</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\utils\ProcessCtxWorker.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
     <ClInclude Include="src\Process2Fuzz.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -133,9 +127,6 @@
     <ClInclude Include="..\Common\Kernel\Process.hpp">
       <Filter>Common\Kernel</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\utils\PE.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
     <ClInclude Include="..\Common\utils\ColdPatcher.hpp">
       <Filter>Common\utils</Filter>
     </ClInclude>
@@ -159,6 +150,27 @@
     </ClInclude>
     <ClInclude Include="..\Common\utils\Queue.hpp">
       <Filter>Common\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\base\RefCounter.hpp">
+      <Filter>Common\base</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\UM\PE.hpp">
+      <Filter>Common\UM</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\utils\SafePE.hpp">
+      <Filter>Common\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\UM\AutoHandle.hpp">
+      <Filter>Common\UM</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\UM\SubProcessTagResolver.hpp">
+      <Filter>Common\UM</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\Kernel\AutoId.hpp">
+      <Filter>Common\Kernel</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\base\AutoObRef.hpp">
+      <Filter>Common\base</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -194,6 +206,9 @@
     </Filter>
     <Filter Include="Common\FastCall">
       <UniqueIdentifier>{072ada60-b1c5-49df-b0fd-4fe093c7c601}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Common\UM">
+      <UniqueIdentifier>{1ffd0691-c97e-43ad-a807-05aff32fe5ff}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

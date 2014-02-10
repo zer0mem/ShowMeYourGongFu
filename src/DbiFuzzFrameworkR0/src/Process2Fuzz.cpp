@@ -11,7 +11,7 @@
 #include "../../Common/Kernel/MMU.hpp"
 #include "../../Common/utils/VADWalker.h"
 
-#include "../../Common/utils/PE.hpp"
+#include "../../Common/utils/SafePE.hpp"
 #include "../../Common/FastCall/FastCall.h"
 
 #include "../HyperVisor/Common/base/HVCommon.h"
@@ -23,6 +23,7 @@ CProcess2Fuzz::CProcess2Fuzz(
 	__in HANDLE processId, 
 	__inout_opt PS_CREATE_NOTIFY_INFO* createInfo 
 	) : CProcessContext(process, processId, createInfo),
+		m_vad(process),
 		m_installed(false)
 {
 	RtlZeroMemory(m_extRoutines, sizeof(m_extRoutines));
@@ -65,9 +66,9 @@ void CProcess2Fuzz::ImageNotifyRoutine(
 	IMAGE* img_id;
 	CRange<void> img(imageInfo->ImageBase);
 	img.SetSize(imageInfo->ImageSize);
-	if (m_loadedImgs.Find(img, &img_id) && img_id->Value)
+	if (m_loadedImgs.Find(img, &img_id) && img_id->Obj)
 	{
-		if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img_id->Value->ImageName())))
+		if (CConstants::GetInstance().InAppModulesAVL().Find(&CHashString(img_id->Obj->ImageName())))
 		{
 			CPE pe(imageInfo->ImageBase);
 			const void* func_name;
@@ -138,8 +139,8 @@ bool CProcess2Fuzz::PageFault(
 			{
 				do
 				{
-					thread->Value->FreezeThreadRequest(MemoryTouchByKernel);
-				} while(m_threads.GetNext(thread->Value->ThreadId(), &thread));
+					thread->Obj->FreezeThreadRequest(MemoryTouchByKernel);
+				} while(m_threads.GetNext(thread->Obj->ThreadId(), &thread));
 			}
 
 			return false;//not handled! -> process original PageFault handler!!!
@@ -260,9 +261,7 @@ bool CProcess2Fuzz::DbiSetAddressBreakpoint(
 		CImage* img;
 		if (GetImage(params.HookAddr.Value, &img))
 		{
-			CEProcess eprocess(m_processId);
-			CApcLvl irql;
-			CAutoEProcessAttach attach(eprocess);
+			CAutoProcessIdAttach eprocess(m_processId);
 			if (eprocess.IsAttached())
 			{
 				if (SYSCALL_SET_ADDRESS_BP == syscallId)
@@ -314,8 +313,7 @@ bool CProcess2Fuzz::DbiSetMemoryBreakpoint(
 	bool succ = false;
 	if (mem2watch)
 	{
-		CEProcess eprocess(m_processId);
-		CAutoEProcessAttach attach(eprocess);
+		CAutoProcessIdAttach eprocess(m_processId);
 		if (eprocess.IsAttached())
 		{
 			switch (syscallId)
@@ -364,10 +362,10 @@ bool CProcess2Fuzz::DbiEnumThreads(
 		else
 			(void)m_threads.GetNext(cid->ThreadId.Value, &thread);
 
-		if (thread && thread->Value)
+		if (thread && thread->Obj)
 		{
 			cid->ProcId.Value = m_processId;
-			cid->ThreadId.Value = thread->Value->ThreadId();
+			cid->ThreadId.Value = thread->Obj->ThreadId();
 		}
 
 		return true;
@@ -409,14 +407,14 @@ bool CProcess2Fuzz::DbiEnumModules(
 		else
 			(void)m_loadedImgs.GetNext(CRange<void>(module->ImageBase.Value), &img);
 
-		if (img && img->Value)
+		if (img && img->Obj)
 		{
-			module->ImageBase.Value = img->Value->Image().Begin();
-			module->ImageSize.Value = img->Value->Image().GetSize();
-			module->Is64.Value = img->Value->Is64();
+			module->ImageBase.Value = img->Obj->Image().Begin();
+			module->ImageSize.Value = img->Obj->Image().GetSize();
+			module->Is64.Value = img->Obj->Is64();
 			RtlZeroMemory(&module->ImageName.Value, sizeof(module->ImageName.Value));
-			if (img->Value->ImageName().Length < sizeof(module->ImageName.Value))
-				memcpy(&module->ImageName.Value, img->Value->ImageName().Buffer, img->Value->ImageName().Length);
+			if (img->Obj->ImageName().Length < sizeof(module->ImageName.Value))
+				memcpy(&module->ImageName.Value, img->Obj->ImageName().Buffer, img->Obj->ImageName().Length);
 		}
 
 		return true;
@@ -437,11 +435,10 @@ bool CProcess2Fuzz::DbiGetProcAddress(
 		CImage* img;
 		if (GetImage(api_param->ModuleBase.Value, &img))
 		{
-			CEProcess eprocess(m_processId);
-			CAutoEProcessAttach attach(eprocess);
+			CAutoProcessIdAttach eprocess(m_processId);
 			if (eprocess.IsAttached())
 			{
-				api_param->ApiAddr.Value = CPE::GetProcAddressSafe(api_param->ApiName.Value, img->Image().Begin());
+				api_param->ApiAddr.Value = CSafePE::GetProcAddressSafe(api_param->ApiName.Value, img->Image().Begin());
 				return true;
 			}
 		}
@@ -490,8 +487,7 @@ bool CProcess2Fuzz::DbiDumpMemory(
 		void* dst = mdl_dbg.WritePtr();
 		if (dst)
 		{
-			CEProcess eprocess(m_processId);
-			CAutoEProcessAttach attach(eprocess);
+			CAutoProcessIdAttach eprocess(m_processId);
 			if (eprocess.IsAttached())
 			{
 				CMdl mdl_mntr(params.Src.Value, params.Size.Value);
@@ -520,8 +516,7 @@ bool CProcess2Fuzz::DbiPatchMemory(
 		const void* src = mdl_mntr.ReadPtr();
 		if (src)
 		{
-			CEProcess eprocess(m_processId);
-			CAutoEProcessAttach attach(eprocess);
+			CAutoProcessIdAttach eprocess(m_processId);
 			if (eprocess.IsAttached())
 			{
 				CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
@@ -557,7 +552,7 @@ bool CProcess2Fuzz::Syscall(
 	case SYSCALL_INIT:
 		if (m_processId != PsGetCurrentProcessId())
 			status = DbiInit(reg);
-		else//ERROR
+		else//ObjOR
 			KeBreak();
 
 		break;
@@ -672,9 +667,9 @@ void CProcess2Fuzz::ResolveThreads()
 			do
 			{
 				THREAD* thread;
-				if (m_threads.Find(*thread_id, &thread) && thread->Value)
+				if (m_threads.Find(*thread_id, &thread) && thread->Obj)
 				{
-					CThreadEvent* thread_event = thread->Value;
+					CThreadEvent* thread_event = thread->Obj;
 					if (thread_event->ResolveThread())
 					{
 						m_loadedImgs.Pop(CRange<void>(thread_event->GetStack().Begin(), thread_event->GetStack().End()));

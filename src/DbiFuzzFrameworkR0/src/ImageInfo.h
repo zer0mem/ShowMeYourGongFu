@@ -1,11 +1,6 @@
 /**
  * @file ImageInfo.hpp
  * @author created by: Peter Hlavaty
- * @author created on: 2013/08/09
- * @author \n
- * @author Copyright (c) 2013 ESET, spol. s r. o.
- * @note current owner: Peter Hlavaty (peter.hlavaty@eset.sk)
- * @note IMPORTANT: Before doing any significant change to this file check your plan with the current owner to avoid unexpected behaviour.
  */
 
 #ifndef __IMAGEINFO_H__

@@ -49,10 +49,7 @@ public:
 
 	__forceinline
 	__checkReturn
-	bool GetProcess(
-		__in HANDLE processId,
-		__inout CProcess2Fuzz** process
-		);	
+	CRefObjWorker<HANDLE, CProcess2Fuzz>* GetProcessWorker();	
 
 	static CStack< CAutoTypeMalloc<TRACE_INFO> > m_branchInfoStack;
 

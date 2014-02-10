@@ -135,8 +135,7 @@ class CThreadEvent :
 public:	
 	CThreadEvent(
 		__in HANDLE threadId,
-		__in HANDLE parentProcessId,
-		__in CVadScanner& vad
+		__in HANDLE parentProcessId
 		);
 
 	~CThreadEvent();
@@ -185,7 +184,7 @@ public:
 	bool ResolveThread()
 	{
 		if (!m_resolved)
-			m_resolved = m_ethread.Initialize();
+			m_resolved = m_ethread.Resolve();
 		return m_resolved;
 	}
 	
@@ -210,7 +209,6 @@ protected:
 private:
 	//reference this ethread in m$
 	CEthread m_ethread;
-	CVadScanner& m_vad;
 };
 
 template<class TYPE>

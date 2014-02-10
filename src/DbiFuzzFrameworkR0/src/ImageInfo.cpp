@@ -10,7 +10,7 @@
 #include "../../Common/base/Common.h"
 #include "Common/Constants.h"
 #include "../../Common/utils/HashString.hpp"
-#include "../../Common/utils/PE.hpp"
+#include "../../Common/utils/SafePE.hpp"
 
 CImage::CImage(
 	__in_opt UNICODE_STRING* fullImageName, 
@@ -71,7 +71,7 @@ bool CImage::SetUpNewRelHook(
 				RELLCALLHOOK_ID hook_id(addrToHook, hook);
 				if (m_hooks.Push(hook_id))
 				{
-					hook_id.Value = NULL;//avoid dtor
+					hook_id.Obj = NULL;//avoid dtor
 					return true;
 				}
 			}
@@ -91,8 +91,8 @@ bool CImage::IsHooked(
 	)
 {
 	RELLCALLHOOK_ID* hook_id;
-	if (m_hooks.Find(RELLCALLHOOK_ID(addrToHookCheck), &hook_id) && hook_id->Value)
-		return hook_id->Value->IsHooked();
+	if (m_hooks.Find(RELLCALLHOOK_ID(addrToHookCheck), &hook_id) && hook_id->Obj)
+		return hook_id->Obj->IsHooked();
 	return false;
 }
 

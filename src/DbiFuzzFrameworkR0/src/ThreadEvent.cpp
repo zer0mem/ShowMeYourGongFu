@@ -19,14 +19,12 @@ EXTERN_C void syscall_instr_epilogue();
 
 CThreadEvent::CThreadEvent(
 	__in HANDLE threadId, 
-	__in HANDLE parentProcessId,
-	__in CVadScanner& vad
+	__in HANDLE parentProcessId
 	) : THREAD_INFO(threadId, parentProcessId),
 		m_dbgThreadInfo(PsGetCurrentProcessId()),
 		m_dbiThreadInfo(parentProcessId),
 		m_ethread(threadId),
-		m_resolved(false),
-		m_vad(vad)
+		m_resolved(false)
 {
 	CDbiMonitor::CreateThread();
 }
@@ -52,9 +50,7 @@ bool EVENT_THREAD_INFO::FlipSemaphore()
 */
 	if (EventSemaphor)
 	{
-		CEProcess eprocess(ProcessId);
-		CApcLvl irql;
-		CAutoEProcessAttach process(eprocess);
+		CAutoProcessIdAttach eprocess(ProcessId);
 		if (eprocess.IsAttached())
 		{
 			CMdl event_semaphor(EventSemaphor, sizeof(BYTE));
@@ -276,9 +272,7 @@ bool DBI_THREAD_EVENT::UpdateContext(
 	__in const EVENT_THREAD_INFO& cthreadInfo 
 	)
 {
-	CEProcess eprocess(ProcessId);
-	CApcLvl irql;
-	CAutoEProcessAttach attach2process(eprocess);
+	CAutoProcessIdAttach eprocess(ProcessId);
 	if (eprocess.IsAttached())
 	{
 		CMdl dbi_auto_context(ContextOnStack, sizeof(cthreadInfo.DbiOutContext));
@@ -324,9 +318,7 @@ bool DBG_THREAD_EVENT::UpdateContext(
 	__in const EVENT_THREAD_INFO& cthreadInfo 
 	)
 {
-	CEProcess eprocess(ProcessId);
-	CApcLvl irql;
-	CAutoEProcessAttach attach2process(eprocess);
+	CAutoProcessIdAttach eprocess(ProcessId);
 	if (eprocess.IsAttached())
 	{
 		CMdl reg_auto_context(ContextOnStack, sizeof(DbiOutContext.GeneralPurposeContext));

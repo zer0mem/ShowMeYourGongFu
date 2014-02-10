@@ -21,6 +21,8 @@ EXTERN_C void rdmsr_hook();
 EXTERN_C void pagafault_hook();
 EXTERN_C void patchguard_hook();
 
+typedef CAutoRef< CRefObjWorker<HANDLE, CProcess2Fuzz>, HANDLE, CProcess2Fuzz> CAutoProcWorkerRef;
+
 CDbiMonitor CDbiMonitor::m_instance;
 
 void* CDbiMonitor::m_pageFaultHandlerPtr[MAX_PROCID];
@@ -213,14 +215,14 @@ EXTERN_C void* SysCallCallback(
 	__inout ULONG_PTR reg [REG_COUNT]
 	)
 {
-	CProcess2Fuzz* fuzzed_proc;
 	//handle tracer fast-calls
 	HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
 	if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
 	{
-		if (CDbiMonitor::GetInstance().GetProcess(proc_id, &fuzzed_proc))
+		CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id);
+		if (proc.IsReferenced() && proc.GetObj())
 		{
-			if (fuzzed_proc->Syscall(reg))
+			if (proc.GetObj()->Syscall(reg))
 				return NULL;
 		}
 	}
@@ -245,12 +247,12 @@ EXTERN_C void* PageFault(
 #define USER_MODE_CS 0x1
 	if (PPAGE_FAULT_IRET(reg)->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
 	{
-		CProcess2Fuzz* fuzzed_proc;
-		if (CDbiMonitor::GetInstance().GetProcess(PsGetCurrentProcessId(), &fuzzed_proc))
+		CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), PsGetCurrentProcessId());
+		if (proc.IsReferenced() && proc.GetObj())
 		{
 			BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 			//DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
-			if (fuzzed_proc->PageFault(fault_addr, reg))
+			if (proc.GetObj()->PageFault(fault_addr, reg))
 				return NULL;
 		}
 	}
@@ -528,10 +530,7 @@ void CDbiMonitor::SetPFHandler(
 
 //getter
 __checkReturn
-bool CDbiMonitor::GetProcess( 
-	__in HANDLE processId,
-	__inout CProcess2Fuzz** process
-	)
+CRefObjWorker<HANDLE, CProcess2Fuzz>* CDbiMonitor::GetProcessWorker()
 {
-	return m_procMonitor.GetProcessWorker().GetProcess(processId, process);
+	return m_procMonitor.GetProcessWorker();
 }

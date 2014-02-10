@@ -172,6 +172,9 @@
     <ClInclude Include="..\Common\base\AutoObRef.hpp">
       <Filter>Common\base</Filter>
     </ClInclude>
+    <ClInclude Include="..\Common\base\SharedMacros.hpp">
+      <Filter>Common\base</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="driver_template.rc" />

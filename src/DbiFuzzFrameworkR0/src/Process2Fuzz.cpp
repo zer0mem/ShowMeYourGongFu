@@ -259,21 +259,21 @@ bool CProcess2Fuzz::DbiSetAddressBreakpoint(
 	if (ReadParamBuffer<PARAM_HOOK>(reg, &params))
 	{
 		CImage* img;
-		if (GetImage(params.HookAddr.Value, &img))
+		if (GetImage(params.HookAddr, &img))
 		{
 			CAutoProcessIdAttach eprocess(m_processId);
 			if (eprocess.IsAttached())
 			{
 				if (SYSCALL_SET_ADDRESS_BP == syscallId)
 				{
-					return img->SetUpNewRelHook(params.HookAddr.Value, m_extRoutines[ExtHook]);
+					return img->SetUpNewRelHook(params.HookAddr, m_extRoutines[ExtHook]);
 				}
 				else
 				{
-					if (img->IsHooked(params.HookAddr.Value))
-						img->UninstallHook(params.HookAddr.Value);
+					if (img->IsHooked(params.HookAddr))
+						img->UninstallHook(params.HookAddr);
 
-					return !img->IsHooked(params.HookAddr.Value);
+					return !img->IsHooked(params.HookAddr);
 				}
 			}
 		}
@@ -297,13 +297,13 @@ bool CProcess2Fuzz::DbiSetMemoryBreakpoint(
 		PARAM_MEM2WATCH* mem = static_cast<PARAM_MEM2WATCH*>(auto_mem.WritePtrUser());
 		if (mem)
 		{
-			mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(mem->Memory.Value));
-			size = ALIGN((mem->Size.Value + (mem->Memory.uValue - reinterpret_cast<ULONG_PTR>(mem2watch)) + PAGE_SIZE), PAGE_SIZE);
+			mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(mem->Memory));
+			size = ALIGN((mem->Size + (reinterpret_cast<ULONG_PTR>(mem->Memory) - reinterpret_cast<ULONG_PTR>(mem2watch)) + PAGE_SIZE), PAGE_SIZE);
 
 			if (m_vad.FindVadMemoryRange(mem2watch, &vad_mem))
 			{
-				mem->Size.Value = size;
-				mem->Memory.Value = mem2watch;		
+				mem->Size = size;
+				mem->Memory = mem2watch;		
 			}
 		}
 	}
@@ -357,15 +357,15 @@ bool CProcess2Fuzz::DbiEnumThreads(
 	if (cid)
 	{
 		THREAD* thread = NULL;
-		if (!cid->ThreadId.Value)
+		if (!cid->ThreadId)
 			(void)m_threads.Find(NULL, &thread);
 		else
-			(void)m_threads.GetNext(cid->ThreadId.Value, &thread);
+			(void)m_threads.GetNext(cid->ThreadId, &thread);
 
 		if (thread && thread->Obj)
 		{
-			cid->ProcId.Value = m_processId;
-			cid->ThreadId.Value = thread->Obj->ThreadId();
+			cid->ProcId = m_processId;
+			cid->ThreadId = thread->Obj->ThreadId();
 		}
 
 		return true;
@@ -402,19 +402,19 @@ bool CProcess2Fuzz::DbiEnumModules(
 	if (module)
 	{
 		IMAGE* img = NULL;
-		if (!module->ImageBase.Value)
-			(void)m_loadedImgs.Find(CRange<void>(module->ImageBase.Value), &img);
+		if (!module->ImageBase)
+			(void)m_loadedImgs.Find(CRange<void>(module->ImageBase), &img);
 		else
-			(void)m_loadedImgs.GetNext(CRange<void>(module->ImageBase.Value), &img);
+			(void)m_loadedImgs.GetNext(CRange<void>(module->ImageBase), &img);
 
 		if (img && img->Obj)
 		{
-			module->ImageBase.Value = img->Obj->Image().Begin();
-			module->ImageSize.Value = img->Obj->Image().GetSize();
-			module->Is64.Value = img->Obj->Is64();
-			RtlZeroMemory(&module->ImageName.Value, sizeof(module->ImageName.Value));
-			if (img->Obj->ImageName().Length < sizeof(module->ImageName.Value))
-				memcpy(&module->ImageName.Value, img->Obj->ImageName().Buffer, img->Obj->ImageName().Length);
+			module->ImageBase = img->Obj->Image().Begin();
+			module->ImageSize = img->Obj->Image().GetSize();
+			module->Is64 = img->Obj->Is64();
+			RtlZeroMemory(&module->ImageName, sizeof(module->ImageName));
+			if (img->Obj->ImageName().Length < sizeof(module->ImageName))
+				memcpy(&module->ImageName, img->Obj->ImageName().Buffer, img->Obj->ImageName().Length);
 		}
 
 		return true;
@@ -433,12 +433,12 @@ bool CProcess2Fuzz::DbiGetProcAddress(
 	if (api_param)
 	{
 		CImage* img;
-		if (GetImage(api_param->ModuleBase.Value, &img))
+		if (GetImage(api_param->ModuleBase, &img))
 		{
 			CAutoProcessIdAttach eprocess(m_processId);
 			if (eprocess.IsAttached())
 			{
-				api_param->ApiAddr.Value = CSafePE::GetProcAddressSafe(api_param->ApiName.Value, img->Image().Begin());
+				api_param->ApiAddr = CSafePE::GetProcAddressSafe(api_param->ApiName, img->Image().Begin());
 				return true;
 			}
 		}
@@ -462,11 +462,11 @@ bool CProcess2Fuzz::DbiEnumMemory(
 	{
 		CVadNodeMemRange vad_mem;
 		//NULL is equivalent getlowerbound
-		if (m_vad.GetNextVadMemoryRange(mem->Begin.Value, &vad_mem))
+		if (m_vad.GetNextVadMemoryRange(mem->Begin, &vad_mem))
 		{
-			mem->Begin.Value = vad_mem.Begin();
-			mem->Size.Value = vad_mem.GetSize();
-			mem->Flags.Value = vad_mem.GetFlags().UFlags;
+			mem->Begin = vad_mem.Begin();
+			mem->Size = vad_mem.GetSize();
+			mem->Flags = vad_mem.GetFlags().UFlags;
 		}
 
 		return true;
@@ -483,18 +483,18 @@ bool CProcess2Fuzz::DbiDumpMemory(
 	if (ReadParamBuffer<PARAM_MEMCOPY>(reg, &params))
 	{
 		CApcLvl irql;
-		CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
+		CMdl mdl_dbg(params.Dst, params.Size);
 		void* dst = mdl_dbg.WritePtr();
 		if (dst)
 		{
 			CAutoProcessIdAttach eprocess(m_processId);
 			if (eprocess.IsAttached())
 			{
-				CMdl mdl_mntr(params.Src.Value, params.Size.Value);
+				CMdl mdl_mntr(params.Src, params.Size);
 				const void* src = mdl_mntr.ForceReadPtrUser();
 				if (src)
 				{
-					memcpy(dst, src, params.Size.Value);
+					memcpy(dst, src, params.Size);
 					return true;
 				}
 			}
@@ -512,18 +512,18 @@ bool CProcess2Fuzz::DbiPatchMemory(
 	if (ReadParamBuffer<PARAM_MEMCOPY>(reg, &params))
 	{
 		CApcLvl irql;
-		CMdl mdl_mntr(params.Src.Value, params.Size.Value);
+		CMdl mdl_mntr(params.Src, params.Size);
 		const void* src = mdl_mntr.ReadPtr();
 		if (src)
 		{
 			CAutoProcessIdAttach eprocess(m_processId);
 			if (eprocess.IsAttached())
 			{
-				CMdl mdl_dbg(params.Dst.Value, params.Size.Value);
+				CMdl mdl_dbg(params.Dst, params.Size);
 				void* dst = mdl_dbg.ForceWritePtrUser();
 				if (dst)
 				{
-					memcpy(dst, src, params.Size.Value);
+					memcpy(dst, src, params.Size);
 					return true;
 				}
 			}

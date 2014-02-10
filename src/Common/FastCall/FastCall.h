@@ -75,85 +75,75 @@ enum EnumTraceReason
 
 #pragma pack(push, 1)
 
-template<class TYPE>
-struct TYPE_X86COMPATIBLE
-{
-	union
-	{
-		ULONG64 uValue;
-		TYPE Value;
-	};
-};
-
-struct TRACE_INFO 
+typedef struct _TRACE_INFO 
 {
 	PFIRET StateInfo;
-	TYPE_X86COMPATIBLE<BYTE> Btf;
-	TYPE_X86COMPATIBLE<const void*> PrevEip;
-	TYPE_X86COMPATIBLE<ULONG_PTR> Reason;
-};
+	BYTE Btf;
+	const void* PrevEip;
+	ULONG_PTR Reason;
+} TRACE_INFO;
 
-struct MEMORY_ACCESS
+typedef struct _MEMORY_ACCESS
 {
-	TYPE_X86COMPATIBLE<const void*> Memory;
-	TYPE_X86COMPATIBLE<const void*> Begin;
-	TYPE_X86COMPATIBLE<size_t> Size;
-	TYPE_X86COMPATIBLE<ULONG> Flags;
-	TYPE_X86COMPATIBLE<ULONG_PTR> OriginalValue;
-};
+	const void* Memory;
+	const void* Begin;
+	size_t Size;
+	ULONG Flags;
+	ULONG_PTR OriginalValue;
+} MEMORY_ACCESS;
 
-struct DBI_OUT_CONTEXT
+typedef struct _DBI_OUT_CONTEXT
 {
 	ULONG_PTR GeneralPurposeContext[REG_COUNT + 1];
 	TRACE_INFO TraceInfo;
 	MEMORY_ACCESS MemoryInfo;
-};
+} DBI_OUT_CONTEXT;
 
-struct CID_ENUM
+typedef struct _CID_ENUM
 {
-	TYPE_X86COMPATIBLE<HANDLE> ProcId;
-	TYPE_X86COMPATIBLE<HANDLE> ThreadId;
-};
+	HANDLE ProcId;
+	HANDLE ThreadId;
+} CID_ENUM;
 
-struct MEMORY_ENUM
+typedef struct _MEMORY_ENUM
 {
-	TYPE_X86COMPATIBLE<const void*> Begin;
-	TYPE_X86COMPATIBLE<size_t> Size;
-	TYPE_X86COMPATIBLE<ULONG> Flags;
-};
+	const void* Begin;
+	size_t Size;
+	ULONG Flags;
+} MEMORY_ENUM;
 
-struct MODULE_ENUM
+typedef struct _MODULE_ENUM
 {
-	TYPE_X86COMPATIBLE<const void*> ImageBase;
-	TYPE_X86COMPATIBLE<size_t> ImageSize;
-	TYPE_X86COMPATIBLE<bool> Is64;
-	TYPE_X86COMPATIBLE<WCHAR[0x100]> ImageName;
-};
+	const void* ImageBase;
+	size_t ImageSize;
+	bool Is64;
+	WCHAR ImageName[0x100];
+} MODULE_ENUM;
 
-struct PARAM_API
+typedef struct _PARAM_API
 {
-	TYPE_X86COMPATIBLE<const void*> ApiAddr;
-	TYPE_X86COMPATIBLE<const void*> ModuleBase;
-	TYPE_X86COMPATIBLE<CHAR[0x100]> ApiName;
-};
+	const void* ApiAddr;
+	const void* ModuleBase;
+	CHAR ApiName[0x100];
+} PARAM_API;
 
-struct PARAM_MEMCOPY
+typedef struct _PARAM_MEMCOPY
 {
-	TYPE_X86COMPATIBLE<const void*> Src;
-	TYPE_X86COMPATIBLE<void*> Dst;
-	TYPE_X86COMPATIBLE<size_t> Size;
-};
+	const void* Src;
+	void* Dst;
+	size_t Size;
+} PARAM_MEMCOPY;
 
-struct PARAM_HOOK
+typedef struct _PARAM_HOOK
 {
-	TYPE_X86COMPATIBLE<void*> HookAddr;
-};
+	void* HookAddr;
+} PARAM_HOOK;
 
-struct PARAM_MEM2WATCH
+typedef struct _PARAM_MEM2WATCH
 {
-	TYPE_X86COMPATIBLE<const void*> Memory;
-	TYPE_X86COMPATIBLE<size_t> Size;
-};
+	const void* Memory;
+	size_t Size;
+} PARAM_MEM2WATCH;
 
 #pragma pack(pop)
 

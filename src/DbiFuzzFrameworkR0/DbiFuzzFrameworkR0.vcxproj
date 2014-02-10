@@ -299,6 +299,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="..\Common\base\Shared.h" />
+    <ClInclude Include="..\Common\base\SharedMacros.hpp" />
     <ClInclude Include="..\Common\base\Singleton.hpp" />
     <ClInclude Include="..\Common\CPU\msr.h" />
     <ClInclude Include="..\Common\FastCall\FastCall.h" />

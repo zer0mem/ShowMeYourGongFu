@@ -315,7 +315,7 @@ void CDbiMonitor::VMMEXCEPTION(
 				{
 					trace_info->StateInfo.IRet.StackPointer = vmm_exit.GetSp();
 					trace_info->StateInfo.IRet.Return = const_cast<void*>(vmm_exit.GetIp());
-					trace_info->PrevEip.Value = reinterpret_cast<const void*>(src);
+					trace_info->PrevEip = reinterpret_cast<const void*>(src);
 					trace_info->StateInfo.IRet.Flags = vmm_exit.GetFlags();
 
 					//set eip to non-exec mem for quick recognization by PageFault handler

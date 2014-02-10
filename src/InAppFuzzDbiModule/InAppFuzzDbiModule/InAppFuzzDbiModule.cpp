@@ -34,7 +34,7 @@ void SmartTrace(
 	__inout DBI_OUT_CONTEXT* dbiOut
 	)
 {
-	FastCallMonitorWait(SYSCALL_TRACE_FLAG, cid->ProcId.Value, cid->ThreadId.Value, dbiOut);
+	FastCallMonitorWait(SYSCALL_TRACE_FLAG, cid->ProcId, cid->ThreadId, dbiOut);
 }
 
 EXTERN_C __declspec(dllexport) 
@@ -42,9 +42,9 @@ void GetNextFuzzThread(
 	__inout CID_ENUM* cid
 	)
 {
-	HANDLE proc_id = cid->ProcId.Value;
-	HANDLE thread_id = cid->ThreadId.Value;
-	FastCallMonitor(SYSCALL_ENUM_THREAD, cid->ProcId.Value, cid->ThreadId.Value, cid);
+	HANDLE proc_id = cid->ProcId;
+	HANDLE thread_id = cid->ThreadId;
+	FastCallMonitor(SYSCALL_ENUM_THREAD, cid->ProcId, cid->ThreadId, cid);
 }
 
 EXTERN_C __declspec(dllexport) 
@@ -53,7 +53,7 @@ void Init(
 	__inout DBI_OUT_CONTEXT* dbiOut
 	)
 {
-	FastCallMonitor(SYSCALL_INIT, cid->ProcId.Value, cid->ThreadId.Value, dbiOut);
+	FastCallMonitor(SYSCALL_INIT, cid->ProcId, cid->ThreadId, dbiOut);
 }
 
 EXTERN_C __declspec(dllexport) 
@@ -93,9 +93,9 @@ void DbiDumpMemory(
 {
 	PARAM_MEMCOPY mem_cpy;
 	RtlZeroMemory(&mem_cpy, sizeof(mem_cpy));
-	mem_cpy.Src.Value = src;
-	mem_cpy.Dst.Value = dst;
-	mem_cpy.Size.Value = size;
+	mem_cpy.Src = src;
+	mem_cpy.Dst = dst;
+	mem_cpy.Size = size;
 	FastCallMonitor(SYSCALL_DUMP_MEMORY, procId, 0, &mem_cpy);
 }
 
@@ -109,9 +109,9 @@ void DbiPatchMemory(
 {
 	PARAM_MEMCOPY mem_cpy;
 	RtlZeroMemory(&mem_cpy, sizeof(mem_cpy));
-	mem_cpy.Src.Value = src;
-	mem_cpy.Dst.Value = dst;
-	mem_cpy.Size.Value = size;
+	mem_cpy.Src = src;
+	mem_cpy.Dst = dst;
+	mem_cpy.Size = size;
 	FastCallMonitor(SYSCALL_PATCH_MEMORY, procId, 0, &mem_cpy);
 }
 
@@ -191,5 +191,5 @@ void DbiSuspendThread(
 	__in const CID_ENUM* cid
 	)
 {
-	FastCallMonitor(SYSCALL_FREEZE_THREAD, cid->ProcId.Value, cid->ThreadId.Value, NULL);
+	FastCallMonitor(SYSCALL_FREEZE_THREAD, cid->ProcId, cid->ThreadId, NULL);
 }

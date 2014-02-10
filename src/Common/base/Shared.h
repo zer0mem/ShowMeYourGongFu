@@ -24,7 +24,6 @@ typedef signed short SWORD;
 typedef signed long int SDWORD;
 
 typedef char CHAR;
-typedef wchar_t WCHAR;
 typedef short SHORT;
 typedef long LONG;
 typedef unsigned char UCHAR;
@@ -33,10 +32,12 @@ typedef unsigned long ULONG;
 
 typedef BYTE BOOLEAN;
 
-typedef __int64 LONGLONG;
-typedef unsigned __int64 ULONGLONG;
-
 typedef const void *LPCVOID;
+
+typedef QWORD ULONG_PTR;
+
+typedef ULONG_PTR size_t;
+typedef void* HANDLE;
 
 
 //-----------------------------------------------------
@@ -55,41 +56,36 @@ enum EnumIRET
 
 #pragma pack(push, 1)
 
-struct ERROR_CODE
+typedef struct _ERROR_CODE
 {
 	union
 	{
 		ULONG UErrCode;
-		struct CODE
+		struct  
 		{
 			ULONG_PTR Present : 1;
 			ULONG_PTR WriteAccess : 1;
 			ULONG_PTR Ring3 : 1;
 		};
 	};
-};
+} ERROR_CODE;
 
-struct IRET
+typedef struct _IRET
 {
 	void* Return;
 	ULONG_PTR CodeSegment;
 	ULONG_PTR Flags;
 	ULONG_PTR* StackPointer;
 	ULONG_PTR StackSegment;
-};
+} IRET;
 
-struct PFIRET
+typedef struct _PFIRET
 {
 	ERROR_CODE ErrorCode;
 	IRET IRet;
-};
+} PFIRET;
 
 #pragma pack(pop)
-
-#define PPAGE_FAULT_IRET(reg) reinterpret_cast<PFIRET*>(HOOK_ORIG_RSP(reg))//skip unknown param
-#define TARP_FAULT_IRET(reg) reinterpret_cast<IRET*>(HOOK_ORIG_RSP(reg))//skip unknown param
-
-#define ALIGN(addr, granularity)	(ULONG_PTR)((ULONG_PTR)(addr) & (~((granularity) - 1)))
 
 
 //------------------------------------------------------------------
@@ -132,11 +128,5 @@ enum RegFastCallX64Volatile
 	VOLATILE_REG_R9,
 	VOLATILE_REG_COUNT
 };
-
-#define HOOK_ORIG_RSP(reg) (reinterpret_cast<ULONG_PTR*>(reg[RSP]) + 2)//ENTER_HOOK_PROLOGUE + pushf
-//compiler will handle this by optimalization
-#define PPARAM(reg, num) reinterpret_cast<ULONG_PTR*>((num && num <= VOLATILE_REG_COUNT) ? (num < VOLATILE_REG_R8 ? &reg[RCX + num - 1 - VOLATILE_REG_RCX] : &reg[R8 + num - 1 - VOLATILE_REG_R8]) : (HOOK_ORIG_RSP(reg) + num))
-#define PRETURN(reg) HOOK_ORIG_RSP(reg)
-
 
 #endif //__SHARED_H__

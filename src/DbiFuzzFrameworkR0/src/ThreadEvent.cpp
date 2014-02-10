@@ -94,12 +94,12 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 	RtlZeroMemory(&DbiOutContext, sizeof(DbiOutContext));
 	DbgPrint("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@@ MEMORY BP : %p [%x   / %p]\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n", mem->Begin(), mem->GetSize(), mem->GetFlags());
 	DbiOutContext.TraceInfo.StateInfo = *pfIRet;
-	DbiOutContext.MemoryInfo.Memory.Value = faultAddr;
-	DbiOutContext.MemoryInfo.Begin.Value = mem->Begin();
-	DbiOutContext.MemoryInfo.Size.Value = mem->GetSize();
-	DbiOutContext.MemoryInfo.Flags.Value = static_cast<ULONG>(mem->GetFlags());
-	DbiOutContext.MemoryInfo.OriginalValue.Value = 0;
-	DbiOutContext.TraceInfo.Reason.Value = MemoryAcces;
+	DbiOutContext.MemoryInfo.Memory = faultAddr;
+	DbiOutContext.MemoryInfo.Begin = mem->Begin();
+	DbiOutContext.MemoryInfo.Size = mem->GetSize();
+	DbiOutContext.MemoryInfo.Flags = static_cast<ULONG>(mem->GetFlags());
+	DbiOutContext.MemoryInfo.OriginalValue = 0;
+	DbiOutContext.TraceInfo.Reason = MemoryAcces;
 
 	if (CMMU::IsAccessed(faultAddr) && !CMMU::IsValid(faultAddr))
 	{
@@ -109,7 +109,7 @@ bool DBG_THREAD_EVENT::LoadPFContext(
 		CMdl mdl(faultAddr, sizeof(ULONG_PTR));
 		const ULONG_PTR* val = static_cast<const ULONG_PTR*>(mdl.ForceReadPtrUser());
 		if (val)
-			DbiOutContext.MemoryInfo.OriginalValue.Value = *val;
+			DbiOutContext.MemoryInfo.OriginalValue = *val;
 
 		DbgPrint("\nafter read %p\n", *val);
 
@@ -153,12 +153,12 @@ bool DBG_THREAD_EVENT::LoadTrapContext(
 	DbiOutContext.TraceInfo.StateInfo.IRet.StackSegment = pfIRet->IRet.StackSegment;
 
 	if (branchInfo->StateInfo.IRet.Flags & TRAP)
-		DbiOutContext.TraceInfo.Reason.Value = branchInfo->PrevEip.Value ? BranchTraceFlag : SingleTraceFlag;
+		DbiOutContext.TraceInfo.Reason = branchInfo->PrevEip ? BranchTraceFlag : SingleTraceFlag;
 	else
 	{
 		KeBreak();
 		DbgPrint("\n--------------------------------------\n## DBG_THREAD_EVENT::LoadTrapContext HOOK!!\n----------------------------------------\n");
-		DbiOutContext.TraceInfo.Reason.Value = Hook;
+		DbiOutContext.TraceInfo.Reason = Hook;
 	}
 
 	RtlZeroMemory(&DbiOutContext.MemoryInfo, sizeof(DbiOutContext.MemoryInfo));
@@ -204,7 +204,7 @@ bool DBG_THREAD_EVENT::LoadFreezedContext(
 	RtlZeroMemory(&DbiOutContext, sizeof(DbiOutContext));
 
 	DbiOutContext.TraceInfo.StateInfo = *pfIRet;
-	DbiOutContext.TraceInfo.Reason.Value = FreezeReason;
+	DbiOutContext.TraceInfo.Reason = FreezeReason;
 
 	//TODO : rethink -> probably this shoud be by defaul in func 'LoadContext', and kick it out from HV TrapHandler !
 	pfIRet->IRet.StackPointer = &pfIRet->IRet.StackPointer[-(IRetCount + REG_COUNT + 1)];
@@ -332,7 +332,7 @@ bool DBG_THREAD_EVENT::UpdateContext(
 			IRET* iret = static_cast<IRET*>(r_auto_context.ForceWritePtrUser());
 			if (iret)
 			{
-				if (!cthreadInfo.DbiOutContext.TraceInfo.Btf.Value)
+				if (!cthreadInfo.DbiOutContext.TraceInfo.Btf)
 					//disable BTF : not wrmsr but instead DEBUG REGISTERS!! -> per thread!
 					//disable_branchtrace(); //-> VMX.cpp initialize vmm : vmwrite(VMX_VMCS64_GUEST_DR7, 0x400);
 					wrmsr(IA32_DEBUGCTL, ~(BTF | LBR));//disable BTF -> special handling for wrmsr in HV

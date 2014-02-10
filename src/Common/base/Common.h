@@ -9,6 +9,7 @@
 #include "new.h"
 
 #include "Shared.h"
+#include "SharedMacros.hpp"
 
 #define _DEBUG_MODE
 

@@ -249,7 +249,7 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <ForceConformanceInForLoopScope>false</ForceConformanceInForLoopScope>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
-      <PrecompiledHeader>Create</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <CallingConvention>StdCall</CallingConvention>
@@ -261,7 +261,7 @@
     </ProjectReference>
     <Link>
       <AdditionalOptions>/safeseh:no %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>ntoskrnl.lib;hal.lib;libcmtd.lib;FltMgr.lib;../Cronos/Debug-amd64/Cronos.lib;../HyperVisor/Debug-amd64/HyperVisor.lib;C:\Program Files (x86)\Windows Kits\8.0\Lib\win7\km\x64\procgrp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ntoskrnl.lib;hal.lib;libcmtd.lib;FltMgr.lib;C:\Program Files (x86)\Windows Kits\8.0\Lib\win7\km\x64\procgrp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
       <AdditionalLibraryDirectories>C:\Program Files (x86)\Windows Kits\8.0\Lib\win7\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
@@ -277,62 +277,61 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\Common\base\Common.cpp" />
-    <ClCompile Include="..\Common\base\libc.cpp" />
-    <ClCompile Include="..\Common\Kernel\MemoryMapping.cpp" />
-    <ClCompile Include="..\Common\utils\VADWalker.cpp" />
+    <ClCompile Include="..\..\Common\base\Common.cpp" />
+    <ClCompile Include="..\..\Common\base\libc.cpp" />
+    <ClCompile Include="..\..\Common\Kernel\MemoryMapping.cpp" />
+    <ClCompile Include="..\..\Common\utils\VADWalker.cpp" />
     <ClCompile Include="Common\Constants.cpp" />
     <ClCompile Include="src\DbiMonitor.cpp" />
     <ClCompile Include="DriverEntry.cpp" />
     <ClCompile Include="src\ImageInfo.cpp" />
     <ClCompile Include="src\Process2Fuzz.cpp" />
     <ClCompile Include="src\ThreadEvent.cpp" />
-    <ClCompile Include="StdAfx.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Common\base\AutoMalloc.h" />
-    <ClInclude Include="..\Common\base\AutoObRef.hpp" />
-    <ClInclude Include="..\Common\base\Common.h" />
-    <ClInclude Include="..\Common\base\ComparableId.hpp" />
-    <ClInclude Include="..\Common\base\instrinsics.h" />
-    <ClInclude Include="..\Common\base\RefCounter.hpp">
+    <ClInclude Include="..\..\Common\base\AutoMalloc.h" />
+    <ClInclude Include="..\..\Common\base\AutoObRef.hpp" />
+    <ClInclude Include="..\..\Common\base\Common.h" />
+    <ClInclude Include="..\..\Common\base\ComparableId.hpp" />
+    <ClInclude Include="..\..\Common\base\instrinsics.h" />
+    <ClInclude Include="..\..\Common\base\RefCounter.hpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClInclude>
-    <ClInclude Include="..\Common\base\Shared.h" />
-    <ClInclude Include="..\Common\base\SharedMacros.hpp" />
-    <ClInclude Include="..\Common\base\Singleton.hpp" />
-    <ClInclude Include="..\Common\CPU\msr.h" />
-    <ClInclude Include="..\Common\FastCall\FastCall.h" />
-    <ClInclude Include="..\Common\Kernel\Apc.h" />
-    <ClInclude Include="..\Common\Kernel\AutoId.hpp" />
-    <ClInclude Include="..\Common\Kernel\IRQL.hpp" />
-    <ClInclude Include="..\Common\Kernel\Lock.hpp" />
-    <ClInclude Include="..\Common\Kernel\MemoryMapping.h" />
-    <ClInclude Include="..\Common\Kernel\MMU.h" />
-    <ClInclude Include="..\Common\Kernel\MMU.hpp" />
-    <ClInclude Include="..\Common\Kernel\Process.hpp" />
-    <ClInclude Include="..\Common\Kernel\Thread.hpp" />
-    <ClInclude Include="..\Common\UM\AutoHandle.hpp" />
-    <ClInclude Include="..\Common\UM\PE.hpp" />
-    <ClInclude Include="..\Common\UM\SubProcessTagResolver.hpp" />
-    <ClInclude Include="..\Common\utils\AVL.hpp" />
-    <ClInclude Include="..\Common\utils\BinTreeWalker.hpp" />
-    <ClInclude Include="..\Common\utils\ColdPatcher.hpp" />
-    <ClInclude Include="..\Common\utils\CSYSCALL.h" />
-    <ClInclude Include="..\Common\utils\CSYSCALL.hpp" />
-    <ClInclude Include="..\Common\utils\Queue.hpp" />
-    <ClInclude Include="..\Common\utils\SyscallCallbacks.hpp" />
-    <ClInclude Include="..\Common\utils\HashString.hpp" />
-    <ClInclude Include="..\Common\utils\LockedContainers.hpp" />
-    <ClInclude Include="..\Common\utils\MemoryRange.h" />
-    <ClInclude Include="..\Common\utils\SafePE.hpp" />
-    <ClInclude Include="..\Common\utils\ProcessCtx.h" />
-    <ClInclude Include="..\Common\utils\ProcessMonitor.hpp" />
-    <ClInclude Include="..\Common\utils\Range.h" />
-    <ClInclude Include="..\Common\utils\Undoc.h" />
-    <ClInclude Include="..\Common\utils\Undoc.hpp" />
-    <ClInclude Include="..\Common\utils\Vad.h" />
-    <ClInclude Include="..\Common\utils\VADWalker.h" />
+    <ClInclude Include="..\..\Common\base\Shared.h" />
+    <ClInclude Include="..\..\Common\base\SharedMacros.hpp" />
+    <ClInclude Include="..\..\Common\base\Singleton.hpp" />
+    <ClInclude Include="..\..\Common\CPU\msr.h" />
+    <ClInclude Include="..\..\Common\FastCall\FastCall.h" />
+    <ClInclude Include="..\..\Common\Kernel\Apc.h" />
+    <ClInclude Include="..\..\Common\Kernel\AutoId.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\IRQL.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\Lock.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\MemoryMapping.h" />
+    <ClInclude Include="..\..\Common\Kernel\MMU.h" />
+    <ClInclude Include="..\..\Common\Kernel\MMU.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\Process.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\Thread.hpp" />
+    <ClInclude Include="..\..\Common\UM\AutoHandle.hpp" />
+    <ClInclude Include="..\..\Common\UM\PE.hpp" />
+    <ClInclude Include="..\..\Common\UM\SubProcessTagResolver.hpp" />
+    <ClInclude Include="..\..\Common\utils\AVL.hpp" />
+    <ClInclude Include="..\..\Common\utils\BinTreeWalker.hpp" />
+    <ClInclude Include="..\..\Common\utils\ColdPatcher.hpp" />
+    <ClInclude Include="..\..\Common\utils\CSYSCALL.h" />
+    <ClInclude Include="..\..\Common\utils\CSYSCALL.hpp" />
+    <ClInclude Include="..\..\Common\utils\Queue.hpp" />
+    <ClInclude Include="..\..\Common\utils\SyscallCallbacks.hpp" />
+    <ClInclude Include="..\..\Common\utils\HashString.hpp" />
+    <ClInclude Include="..\..\Common\utils\LockedContainers.hpp" />
+    <ClInclude Include="..\..\Common\utils\MemoryRange.h" />
+    <ClInclude Include="..\..\Common\utils\SafePE.hpp" />
+    <ClInclude Include="..\..\Common\utils\ProcessCtx.h" />
+    <ClInclude Include="..\..\Common\utils\ProcessMonitor.hpp" />
+    <ClInclude Include="..\..\Common\utils\Range.h" />
+    <ClInclude Include="..\..\Common\utils\Undoc.h" />
+    <ClInclude Include="..\..\Common\utils\Undoc.hpp" />
+    <ClInclude Include="..\..\Common\utils\Vad.h" />
+    <ClInclude Include="..\..\Common\utils\VADWalker.h" />
     <ClInclude Include="Common\Constants.h" />
     <ClInclude Include="Common\Stack.hpp" />
     <ClInclude Include="drv_common.h" />
@@ -340,28 +339,37 @@
     <ClInclude Include="src\ImageInfo.h" />
     <ClInclude Include="src\Process2Fuzz.h" />
     <ClInclude Include="src\ThreadEvent.h" />
-    <ClInclude Include="StdAfx.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="driver_template.rc" />
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="..\Common\amd64\_instrinsics.asm">
+    <MASM Include="..\..\Common\amd64\_instrinsics.asm">
       <FileType>Document</FileType>
     </MASM>
     <MASM Include="src\amd64\_syscall.asm" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\Common\amd64\common.inc">
+    <None Include="..\..\Common\amd64\common.inc">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Cronos\Cronos.vcxproj">
+    <ProjectReference Include="..\..\minihypervisor\MiniHyperVisorProject\Cronos\Cronos.vcxproj">
       <Project>{b6559a43-52b1-42f0-a76e-3c20430b4d33}</Project>
+      <Private>false</Private>
+      <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <CopyLocalSatelliteAssemblies>false</CopyLocalSatelliteAssemblies>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <UseLibraryDependencyInputs>false</UseLibraryDependencyInputs>
     </ProjectReference>
-    <ProjectReference Include="..\HyperVisor\HyperVisor.vcxproj">
+    <ProjectReference Include="..\..\minihypervisor\MiniHyperVisorProject\HyperVisor\HyperVisor.vcxproj">
       <Project>{ee8aee65-453e-44c7-8e66-a92bef8efc07}</Project>
+      <Private>false</Private>
+      <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <CopyLocalSatelliteAssemblies>false</CopyLocalSatelliteAssemblies>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <UseLibraryDependencyInputs>false</UseLibraryDependencyInputs>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

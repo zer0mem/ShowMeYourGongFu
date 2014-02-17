@@ -3,7 +3,7 @@
 * @author created by: Peter Hlavaty
 */
 
-#include "StdAfx.h"
+#include "drv_common.h"
 
 #include "DbiMonitor.h"
 #include "../../Common/Kernel/IRQL.hpp"
@@ -14,7 +14,9 @@
 #include "Common/Constants.h"
 #include "../../Common/FastCall/FastCall.h"
 
-#include "../../HyperVisor/src/VmmAutoExit.hpp"
+#include "../../minihypervisor/MiniHyperVisorProject/HyperVisor/src/VmmAutoExit.hpp"
+
+bool x(ULONG_PTR a, const void* b) {return true;}
 
 EXTERN_C void sysenter();
 EXTERN_C void rdmsr_hook();
@@ -27,7 +29,7 @@ CDbiMonitor CDbiMonitor::m_instance;
 
 void* CDbiMonitor::m_pageFaultHandlerPtr[MAX_PROCID];
 
-CStack< CAutoTypeMalloc<TRACE_INFO> > CDbiMonitor::m_branchInfoStack;
+CStack< TRACE_INFO > CDbiMonitor::m_branchInfoStack;
 
 CDbiMonitor::CDbiMonitor() :
 	CSingleton(m_instance)
@@ -71,14 +73,14 @@ bool CDbiMonitor::SetVirtualizationCallbacks()
 	if (!CCRonos::SetVirtualizationCallbacks())
 		return false;
 
-	m_traps[VMX_EXIT_RDMSR] = reinterpret_cast<ULONG_PTR>(VMMRDMSR);
-	m_traps[VMX_EXIT_WRMSR] = reinterpret_cast<ULONG_PTR>(VMMWRMSR);
-	m_traps[VMX_EXIT_EXCEPTION] = reinterpret_cast<ULONG_PTR>(VMMEXCEPTION);
+	m_traps[VMX_EXIT_RDMSR] = VMMRDMSR;
+	m_traps[VMX_EXIT_WRMSR] = VMMWRMSR;
+	m_traps[VMX_EXIT_EXCEPTION] = VMMEXCEPTION;
 
 	//disable patchguard
-	RegisterCallback(m_callbacks, AntiPatchGuard);
+	RegisterCallback(&m_callbacks, AntiPatchGuard);
 
-	return RegisterCallback(m_callbacks, VMMCPUID);
+	return RegisterCallback(&m_callbacks, VMMCPUID);
 }
 
 KEVENT w8event;
@@ -95,14 +97,12 @@ void CDbiMonitor::Install()
 	
 	if (CCRonos::EnableVirtualization())
 	{
-		CVirtualizedCpu* v_cpu = m_vCpu;
-		size_t cores_count = KeQueryActiveProcessorCount(NULL);
-		for (BYTE i = 0; i < cores_count; i++, v_cpu++)
+		for (BYTE i = 0; i < m_vCpu.GetCount(); i++)
 		{
 
 #if HYPERVISOR
 
-			if (v_cpu->VirtualizationON())
+			if (m_vCpu[i].VirtualizationON())
 
 #endif
 
@@ -307,10 +307,10 @@ void CDbiMonitor::VMMEXCEPTION(
 				}
 			}
 
-			CAutoTypeMalloc<TRACE_INFO>* trace_info_container = m_branchInfoStack.Pop();//interlocked NonPage queue
+			TRACE_INFO* trace_info_container = m_branchInfoStack.Pop();//interlocked NonPage queue
 			if (trace_info_container)
 			{
-				TRACE_INFO* trace_info = trace_info_container->GetMemory();
+				TRACE_INFO* trace_info = trace_info_container;
 				if (trace_info)
 				{
 					trace_info->StateInfo.IRet.StackPointer = vmm_exit.GetSp();

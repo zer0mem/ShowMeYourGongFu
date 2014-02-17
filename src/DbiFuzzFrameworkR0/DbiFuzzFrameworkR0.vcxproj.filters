@@ -1,19 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="StdAfx.cpp" />
-    <ClCompile Include="..\Common\base\libc.cpp">
-      <Filter>Common\base</Filter>
-    </ClCompile>
     <ClCompile Include="DriverEntry.cpp" />
-    <ClCompile Include="..\Common\utils\VADWalker.cpp">
-      <Filter>Common\utils</Filter>
-    </ClCompile>
     <ClCompile Include="src\Process2Fuzz.cpp">
       <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\base\Common.cpp">
-      <Filter>Common\base</Filter>
     </ClCompile>
     <ClCompile Include="Common\Constants.cpp">
       <Filter>src\Common</Filter>
@@ -27,154 +17,72 @@
     <ClCompile Include="src\ImageInfo.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\Common\Kernel\MemoryMapping.cpp">
-      <Filter>Common\Kernel</Filter>
-    </ClCompile>
+    <ClCompile Include="..\..\Common\base\Common.cpp" />
+    <ClCompile Include="..\..\Common\base\libc.cpp" />
+    <ClCompile Include="..\..\Common\Kernel\MemoryMapping.cpp" />
+    <ClCompile Include="..\..\Common\utils\VADWalker.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="drv_common.h" />
-    <ClInclude Include="StdAfx.h" />
-    <ClInclude Include="..\Common\base\Common.h">
-      <Filter>Common\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\base\instrinsics.h">
-      <Filter>Common\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\IRQL.hpp">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\CPU\msr.h">
-      <Filter>Common\CPU</Filter>
-    </ClInclude>
     <ClInclude Include="Common\Stack.hpp">
       <Filter>src\Common</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\Lock.hpp">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\Apc.h">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\VADWalker.h">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\BinTreeWalker.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\Vad.h">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\Range.h">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\MemoryRange.h">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\MMU.hpp">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\Undoc.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\MMU.h">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\Undoc.h">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\ProcessMonitor.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\AVL.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\LockedContainers.hpp">
-      <Filter>Common\utils</Filter>
     </ClInclude>
     <ClInclude Include="src\Process2Fuzz.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\utils\HashString.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
     <ClInclude Include="Common\Constants.h">
       <Filter>src\Common</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\base\Singleton.hpp">
-      <Filter>Common\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\CSYSCALL.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\CSYSCALL.h">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\base\ComparableId.hpp">
-      <Filter>Common\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\Thread.hpp">
-      <Filter>Common\Kernel</Filter>
     </ClInclude>
     <ClInclude Include="src\DbiMonitor.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\FastCall\FastCall.h">
-      <Filter>Common\FastCall</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\ProcessCtx.h">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\Process.hpp">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\ColdPatcher.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
     <ClInclude Include="src\ThreadEvent.h">
       <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\SyscallCallbacks.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\base\Shared.h">
-      <Filter>Common\base</Filter>
     </ClInclude>
     <ClInclude Include="src\ImageInfo.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\base\AutoMalloc.h">
-      <Filter>Common\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\MemoryMapping.h">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\Queue.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\base\RefCounter.hpp">
-      <Filter>Common\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\UM\PE.hpp">
-      <Filter>Common\UM</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\utils\SafePE.hpp">
-      <Filter>Common\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\UM\AutoHandle.hpp">
-      <Filter>Common\UM</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\UM\SubProcessTagResolver.hpp">
-      <Filter>Common\UM</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\Kernel\AutoId.hpp">
-      <Filter>Common\Kernel</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\base\AutoObRef.hpp">
-      <Filter>Common\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\base\SharedMacros.hpp">
-      <Filter>Common\base</Filter>
-    </ClInclude>
+    <ClInclude Include="..\..\Common\base\AutoMalloc.h" />
+    <ClInclude Include="..\..\Common\base\AutoObRef.hpp" />
+    <ClInclude Include="..\..\Common\base\Common.h" />
+    <ClInclude Include="..\..\Common\base\ComparableId.hpp" />
+    <ClInclude Include="..\..\Common\base\instrinsics.h" />
+    <ClInclude Include="..\..\Common\base\RefCounter.hpp" />
+    <ClInclude Include="..\..\Common\base\Shared.h" />
+    <ClInclude Include="..\..\Common\base\SharedMacros.hpp" />
+    <ClInclude Include="..\..\Common\base\Singleton.hpp" />
+    <ClInclude Include="..\..\Common\CPU\msr.h" />
+    <ClInclude Include="..\..\Common\FastCall\FastCall.h" />
+    <ClInclude Include="..\..\Common\Kernel\Apc.h" />
+    <ClInclude Include="..\..\Common\Kernel\AutoId.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\IRQL.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\Lock.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\MemoryMapping.h" />
+    <ClInclude Include="..\..\Common\Kernel\MMU.h" />
+    <ClInclude Include="..\..\Common\Kernel\MMU.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\Process.hpp" />
+    <ClInclude Include="..\..\Common\Kernel\Thread.hpp" />
+    <ClInclude Include="..\..\Common\UM\AutoHandle.hpp" />
+    <ClInclude Include="..\..\Common\UM\PE.hpp" />
+    <ClInclude Include="..\..\Common\UM\SubProcessTagResolver.hpp" />
+    <ClInclude Include="..\..\Common\utils\AVL.hpp" />
+    <ClInclude Include="..\..\Common\utils\BinTreeWalker.hpp" />
+    <ClInclude Include="..\..\Common\utils\ColdPatcher.hpp" />
+    <ClInclude Include="..\..\Common\utils\CSYSCALL.h" />
+    <ClInclude Include="..\..\Common\utils\CSYSCALL.hpp" />
+    <ClInclude Include="..\..\Common\utils\Queue.hpp" />
+    <ClInclude Include="..\..\Common\utils\SyscallCallbacks.hpp" />
+    <ClInclude Include="..\..\Common\utils\HashString.hpp" />
+    <ClInclude Include="..\..\Common\utils\LockedContainers.hpp" />
+    <ClInclude Include="..\..\Common\utils\MemoryRange.h" />
+    <ClInclude Include="..\..\Common\utils\SafePE.hpp" />
+    <ClInclude Include="..\..\Common\utils\ProcessCtx.h" />
+    <ClInclude Include="..\..\Common\utils\ProcessMonitor.hpp" />
+    <ClInclude Include="..\..\Common\utils\Range.h" />
+    <ClInclude Include="..\..\Common\utils\Undoc.h" />
+    <ClInclude Include="..\..\Common\utils\Undoc.hpp" />
+    <ClInclude Include="..\..\Common\utils\Vad.h" />
+    <ClInclude Include="..\..\Common\utils\VADWalker.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="driver_template.rc" />
@@ -215,7 +123,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="..\Common\amd64\_instrinsics.asm">
+    <MASM Include="..\..\Common\amd64\_instrinsics.asm">
       <Filter>Common\amd64</Filter>
     </MASM>
     <MASM Include="src\amd64\_syscall.asm">
@@ -223,7 +131,7 @@
     </MASM>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\Common\amd64\common.inc">
+    <None Include="..\..\Common\amd64\common.inc">
       <Filter>Common\amd64</Filter>
     </None>
   </ItemGroup>

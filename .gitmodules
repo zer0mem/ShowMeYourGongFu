@@ -1,0 +1,6 @@
+[submodule "Common"]
+	path = Common
+	url = https://github.com/zer0mem/Common.git
+[submodule "minihypervisor"]
+	path = minihypervisor
+	url = https://github.com/zer0mem/MiniHyperVisorProject.git

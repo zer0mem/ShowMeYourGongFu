@@ -6,10 +6,10 @@
 #ifndef __CONSTANTS_H__
 #define __CONSTANTS_H__
 
-#include "../Common/base/Common.h"
-#include "../Common/base/Singleton.hpp"
-#include "../Common/utils/AVL.hpp"
-#include "../Common/utils/HashString.hpp"
+#include "../../Common/base/Common.h"
+#include "../../Common/base/Singleton.hpp"
+#include "../../Common/utils/AVL.hpp"
+#include "../../Common/utils/HashString.hpp"
 
 enum
 {

@@ -1,11 +1,9 @@
-#include "StdAfx.h"
-
 #include "./src/DbiMonitor.h"
 
-#include "../Common/base/Common.h"
+#include "../../Common/base/Common.h"
 #include "drv_common.h"
 
-#include "../Common/utils/Undoc.hpp"
+#include "../../Common/utils/Undoc.hpp"
 #include "Common/Constants.h"
 
 EXTERN_C

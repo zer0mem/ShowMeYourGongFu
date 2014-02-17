@@ -6,8 +6,8 @@
 #include "stdafx.h"
 #include "InAppFuzzDbiModule.h"
 
-#include "../../Common/FastCall/FastCall.h"
-#include "../../Common/base/Shared.h"
+#include "../../../Common/FastCall/FastCall.h"
+#include "../../../Common/base/Shared.h"
 
 #define DLLEXPORT extern "C" __declspec(dllexport) 
 

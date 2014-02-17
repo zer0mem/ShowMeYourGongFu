@@ -3,14 +3,14 @@
  * @author created by: Peter Hlavaty
  */
 
-#include "stdafx.h"
+#include "drv_common.h"
 
 #include "ThreadEvent.h"
 #include "../../Common/FastCall/FastCall.h"
 #include "../../Common/Kernel/Process.hpp"
 #include "../../Common/Kernel/MemoryMapping.h"
 
-#include "../../HyperVisor/Common/base/HVCommon.h"
+#include "../../minihypervisor/MiniHyperVisorProject/HyperVisor/Common/base/HVCommon.h"
 
 EXTERN_C void syscall_instr_prologue();
 EXTERN_C void syscall_instr_epilogue();

@@ -9,13 +9,13 @@
 #include "../../Common/base/Common.h"
 #include "../../Common/base/Singleton.hpp"
 
-#include "../../Cronos/src/Cronos.h"
+#include "../../minihypervisor/MiniHyperVisorProject/Cronos/src/Cronos.h"
 
 #include "../../Common/utils/ProcessorWalker.hpp"
-#include "../Common/utils/ProcessMonitor.hpp"
+#include "../../Common/utils/ProcessMonitor.hpp"
 #include "Process2Fuzz.h"
 
-#include "../../Common/base/AutoMalloc.h"
+#include "../../Common/base/MemoryObj.hpp"
 
 #include "../../Common/utils/Queue.hpp"
 
@@ -51,16 +51,15 @@ public:
 	__checkReturn
 	CRefObjWorker<HANDLE, CProcess2Fuzz>* GetProcessWorker();	
 
-	static CStack< CAutoTypeMalloc<TRACE_INFO> > m_branchInfoStack;
+	static CStack< TRACE_INFO > m_branchInfoStack;
 
 	static
 	void CreateThread()
 	{
 		KeBreak();
-		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoStack.Create();
-		if (trace_info)
+		TRACE_INFO* trace_info = m_branchInfoStack.Create();
 		{
-			::new(trace_info) CAutoTypeMalloc<TRACE_INFO>;
+			::new(trace_info) TRACE_INFO;
 			m_branchInfoStack.Push(trace_info);
 		}
 	}
@@ -70,7 +69,7 @@ public:
 	{
 		KeBreak();
 		//add if -> for if not succesfull create thread .. some kind of counter ...
-		CAutoTypeMalloc<TRACE_INFO>* trace_info = m_branchInfoStack.Pop();
+		TRACE_INFO* trace_info = m_branchInfoStack.Pop();
 		ASSERT(trace_info);
 
 		m_branchInfoStack.Remove(trace_info);

@@ -3,7 +3,7 @@
  * @author created by: Peter Hlavaty
  */
 
-#include "StdAfx.h"
+#include "drv_common.h"
 
 #include "ImageInfo.h"
 

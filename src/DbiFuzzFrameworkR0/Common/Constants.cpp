@@ -3,7 +3,7 @@
  * @author created by: Peter Hlavaty
  */
 
-#include "stdafx.h"
+#include "drv_common.h"
 
 #include "Constants.h"
 

@@ -9,8 +9,17 @@
 #ifndef __DRV_COMMON_H__
 #define __DRV_COMMON_H__
 
-#include "../Common/base/Common.h"
-#include "../Common/utils/Vad.h"
+#include "stddef.h"
+#include "stdlib.h"
+#include "../../Common/base/Common.h"
+#include "../../Common/utils/Vad.h"
+#include "../../Common/base/SharedMacros.hpp"
+
+extern bool x(ULONG_PTR a, const void* b);
+#define vmread(a,b) x(a,b)
+#define vmwrite(a,b) x(0,NULL)
+
+#define IDT_SIZE (sizeof(GATE_DESCRIPTOR) * 0x100)
 
 //x64
 #define VADAddressCreationLock 0x358

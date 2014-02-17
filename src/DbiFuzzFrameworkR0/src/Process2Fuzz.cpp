@@ -3,7 +3,7 @@
  * @author created by: Peter Hlavaty
  */
 
-#include "stdafx.h"
+#include "drv_common.h"
 
 #include "Process2Fuzz.h"
 
@@ -14,7 +14,7 @@
 #include "../../Common/utils/SafePE.hpp"
 #include "../../Common/FastCall/FastCall.h"
 
-#include "../HyperVisor/Common/base/HVCommon.h"
+#include "../../minihypervisor/MiniHyperVisorProject/HyperVisor/Common/base/HVCommon.h"
 
 EXTERN_C void disable_branchtrace();
 
@@ -23,7 +23,6 @@ CProcess2Fuzz::CProcess2Fuzz(
 	__in HANDLE processId, 
 	__inout_opt PS_CREATE_NOTIFY_INFO* createInfo 
 	) : CProcessContext(process, processId, createInfo),
-		m_vad(process),
 		m_installed(false)
 {
 	RtlZeroMemory(m_extRoutines, sizeof(m_extRoutines));
@@ -189,8 +188,8 @@ bool CProcess2Fuzz::PageFault(
 				{
 					//try except blog ? -> indeed use this address as ptr to kernel struct-> 
 					//TODO : check if it is really our kernel object !!!!!
-					const CAutoTypeMalloc<TRACE_INFO>* trace_info_container = reinterpret_cast< const CAutoTypeMalloc<TRACE_INFO>* >(pf_iret->IRet.Return);
-					TRACE_INFO* trace_info = trace_info_container->GetMemory();
+					TRACE_INFO* trace_info_container = reinterpret_cast< TRACE_INFO* >(pf_iret->IRet.Return);
+					TRACE_INFO* trace_info = trace_info_container;
 					if (fuzz_thread->GetStack().IsInRange(trace_info->StateInfo.IRet.StackPointer))
 					{
 						if (fuzz_thread->SmartTraceEvent(reg, trace_info, pf_iret))
@@ -199,7 +198,7 @@ bool CProcess2Fuzz::PageFault(
 							DbgPrint("\n\n TRAP ACC FAIL\n\n");
 
 						//push back to trace_info queue
-						CDbiMonitor::m_branchInfoStack.Push(const_cast<CAutoTypeMalloc<TRACE_INFO>*>(trace_info_container));
+						CDbiMonitor::m_branchInfoStack.Push(const_cast<TRACE_INFO*>(trace_info_container));
 					}
 				}
 			}
@@ -300,7 +299,7 @@ bool CProcess2Fuzz::DbiSetMemoryBreakpoint(
 			mem2watch = reinterpret_cast<BYTE*>(PAGE_ALIGN(mem->Memory));
 			size = ALIGN((mem->Size + (reinterpret_cast<ULONG_PTR>(mem->Memory) - reinterpret_cast<ULONG_PTR>(mem2watch)) + PAGE_SIZE), PAGE_SIZE);
 
-			if (m_vad.FindVadMemoryRange(mem2watch, &vad_mem))
+			if (m_vad.FindVadMemoryRange(mem2watch, vad_mem))
 			{
 				mem->Size = size;
 				mem->Memory = mem2watch;		
@@ -462,7 +461,7 @@ bool CProcess2Fuzz::DbiEnumMemory(
 	{
 		CVadNodeMemRange vad_mem;
 		//NULL is equivalent getlowerbound
-		if (m_vad.GetNextVadMemoryRange(mem->Begin, &vad_mem))
+		if (m_vad.GetNextVadMemoryRange(mem->Begin, vad_mem))
 		{
 			mem->Begin = vad_mem.Begin();
 			mem->Size = vad_mem.GetSize();

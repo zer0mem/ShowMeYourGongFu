@@ -99,8 +99,6 @@ void CDbiMonitor::Install()
 	m_exceptionsMask = BTS(TRAP_debug) | BTS(TRAP_int3);// | BTS(TRAP_page_fault);
 #endif
 
-	m_exceptionsMask = 0;
-	
 	if (CCRonos::EnableVirtualization())
 	{
 		for (BYTE i = 0; i < m_vCpu.GetCount(); i++)
@@ -223,12 +221,12 @@ EXTERN_C void* SysCallCallback(
 {
 	if (CIRQL::SufficienIrql(APC_LEVEL))
 	{
-		DbgPrint("\nIRQL OK!!\n");
+		DbgPrint("\nIRQL OK1!! %x\n", KeGetCurrentIrql());
 		//handle tracer fast-calls
 		HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
 		if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
 		{
-			DbgPrint("\nIRQL OK!!\n");
+			DbgPrint("\nIRQL OK2!!\n");
 			return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
 			CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id);
 			if (proc.IsReferenced() && proc.GetObj())

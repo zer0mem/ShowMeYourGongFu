@@ -9,7 +9,7 @@
 #include "../../Common/base/Common.h"
 #include "../../Common/base/Singleton.hpp"
 
-#include "../../minihypervisor/MiniHyperVisorProject/Cronos/src/Cronos.h"
+#include "../../HyperVisor/src/Cronos.h"
 
 #include "../../Common/utils/ProcessorWalker.hpp"
 #include "../../Common/utils/ProcessMonitor.hpp"

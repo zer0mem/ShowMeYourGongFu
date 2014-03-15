@@ -14,7 +14,7 @@
 #include "../../Common/utils/SafePE.hpp"
 #include "../../Common/FastCall/FastCall.h"
 
-#include "../../minihypervisor/MiniHyperVisorProject/HyperVisor/Common/base/HVCommon.h"
+#include "../../HyperVisor/Common/base/HVCommon.h"
 
 EXTERN_C void disable_branchtrace();
 
@@ -188,8 +188,7 @@ bool CProcess2Fuzz::PageFault(
 				{
 					//try except blog ? -> indeed use this address as ptr to kernel struct-> 
 					//TODO : check if it is really our kernel object !!!!!
-					TRACE_INFO* trace_info_container = reinterpret_cast< TRACE_INFO* >(pf_iret->IRet.Return);
-					TRACE_INFO* trace_info = trace_info_container;
+					TRACE_INFO* trace_info = static_cast<TRACE_INFO*>(pf_iret->IRet.Return);
 					if (fuzz_thread->GetStack().IsInRange(trace_info->StateInfo.IRet.StackPointer))
 					{
 						if (fuzz_thread->SmartTraceEvent(reg, trace_info, pf_iret))
@@ -198,7 +197,7 @@ bool CProcess2Fuzz::PageFault(
 							DbgPrint("\n\n TRAP ACC FAIL\n\n");
 
 						//push back to trace_info queue
-						CDbiMonitor::m_branchInfoStack.Push(const_cast<TRACE_INFO*>(trace_info_container));
+						CDbiMonitor::m_branchInfoStack.Push(trace_info);
 					}
 				}
 			}
@@ -254,25 +253,28 @@ bool CProcess2Fuzz::DbiSetAddressBreakpoint(
 	__in ULONG syscallId
 	)
 {
-	PARAM_HOOK params;
-	if (ReadParamBuffer<PARAM_HOOK>(reg, &params))
+	if (CIRQL::SufficienIrql(APC_LEVEL))
 	{
-		CImage* img;
-		if (GetImage(params.HookAddr, &img))
+		PARAM_HOOK params;
+		if (ReadParamBuffer<PARAM_HOOK>(reg, &params))
 		{
-			CAutoProcessIdAttach eprocess(m_processId);
-			if (eprocess.IsAttached())
+			CImage* img;
+			if (GetImage(params.HookAddr, &img))
 			{
-				if (SYSCALL_SET_ADDRESS_BP == syscallId)
+				CAutoProcessIdAttach eprocess(m_processId);
+				if (eprocess.IsAttached())
 				{
-					return img->SetUpNewRelHook(params.HookAddr, m_extRoutines[ExtHook]);
-				}
-				else
-				{
-					if (img->IsHooked(params.HookAddr))
-						img->UninstallHook(params.HookAddr);
+					if (SYSCALL_SET_ADDRESS_BP == syscallId)
+					{
+						return img->SetUpNewRelHook(params.HookAddr, m_extRoutines[ExtHook]);
+					}
+					else
+					{
+						if (img->IsHooked(params.HookAddr))
+							img->UninstallHook(params.HookAddr);
 
-					return !img->IsHooked(params.HookAddr);
+						return !img->IsHooked(params.HookAddr);
+					}
 				}
 			}
 		}
@@ -290,7 +292,7 @@ bool CProcess2Fuzz::DbiSetMemoryBreakpoint(
 	BYTE* mem2watch = NULL;
 	CVadNodeMemRange vad_mem;
 
-	CApcLvl irql;
+	if (CIRQL::SufficienIrql(APC_LEVEL))
 	{
 		CMdl auto_mem(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(PARAM_MEM2WATCH));
 		PARAM_MEM2WATCH* mem = static_cast<PARAM_MEM2WATCH*>(auto_mem.WritePtrUser());
@@ -350,24 +352,26 @@ bool CProcess2Fuzz::DbiEnumThreads(
 	__inout ULONG_PTR reg[REG_COUNT] 
 	)
 {
-	CApcLvl irql;
-	CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(CID_ENUM));
-	CID_ENUM* cid = static_cast<CID_ENUM*>(auto_cid.WritePtrUser());
-	if (cid)
+	if (CIRQL::SufficienIrql(APC_LEVEL))
 	{
-		THREAD* thread = NULL;
-		if (!cid->ThreadId)
-			(void)m_threads.Find(NULL, &thread);
-		else
-			(void)m_threads.GetNext(cid->ThreadId, &thread);
-
-		if (thread && thread->Obj)
+		CMdl auto_cid(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(CID_ENUM));
+		CID_ENUM* cid = static_cast<CID_ENUM*>(auto_cid.WritePtrUser());
+		if (cid)
 		{
-			cid->ProcId = m_processId;
-			cid->ThreadId = thread->Obj->ThreadId();
-		}
+			THREAD* thread = NULL;
+			if (!cid->ThreadId)
+				(void)m_threads.Find(NULL, &thread);
+			else
+				(void)m_threads.GetNext(cid->ThreadId, &thread);
 
-		return true;
+			if (thread && thread->Obj)
+			{
+				cid->ProcId = m_processId;
+				cid->ThreadId = thread->Obj->ThreadId();
+			}
+
+			return true;
+		}
 	}
 	return false;
 }
@@ -689,11 +693,11 @@ CProcess2Fuzz::~CProcess2Fuzz()
 {
 	CMemoryRange* mem = NULL;
 	m_mem2watch.Find(CMemoryRange(NULL, 1), &mem);
-	if (mem)
+	while (mem)
 	{
-		do
-		{
-			CMMU::SetValid(mem->Begin(), mem->GetSize());
-		} while(m_mem2watch.GetNext(*mem, &mem));
+		CMMU::SetValid(mem->Begin(), mem->GetSize());
+		if (!m_mem2watch.GetNext(*mem, &mem))
+			break;
 	}
+	NT_ASSERTMSG("NOT 'paged back' all altered memory! dangerous mem corruption", m_hooks.GetSize());
 }

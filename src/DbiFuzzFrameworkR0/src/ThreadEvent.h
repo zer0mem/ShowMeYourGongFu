@@ -218,7 +218,6 @@ bool ReadParamBuffer(
 	__inout TYPE* paramsBuff
 	)
 {
-	CApcLvl irql;
 	CMdl mdl(reinterpret_cast<void*>(reg[DBI_PARAMS]), sizeof(TYPE));
 	const TYPE* params_buff = reinterpret_cast<const TYPE*>(mdl.ReadPtrUser());
 	if (params_buff)

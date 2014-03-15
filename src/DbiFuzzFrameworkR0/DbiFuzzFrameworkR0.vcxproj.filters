@@ -64,7 +64,6 @@
     <ClInclude Include="..\..\Common\Kernel\Thread.hpp" />
     <ClInclude Include="..\..\Common\UM\AutoHandle.hpp" />
     <ClInclude Include="..\..\Common\UM\PE.hpp" />
-    <ClInclude Include="..\..\Common\UM\SubProcessTagResolver.hpp" />
     <ClInclude Include="..\..\Common\utils\AVL.hpp" />
     <ClInclude Include="..\..\Common\utils\BinTreeWalker.hpp" />
     <ClInclude Include="..\..\Common\utils\ColdPatcher.hpp" />

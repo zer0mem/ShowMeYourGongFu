@@ -10,7 +10,7 @@
 #include "../../Common/Kernel/Process.hpp"
 #include "../../Common/Kernel/MemoryMapping.h"
 
-#include "../../minihypervisor/MiniHyperVisorProject/HyperVisor/Common/base/HVCommon.h"
+#include "../../HyperVisor/Common/base/HVCommon.h"
 
 EXTERN_C void syscall_instr_prologue();
 EXTERN_C void syscall_instr_epilogue();

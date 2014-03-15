@@ -102,3 +102,16 @@ void CImage::UninstallHook(
 {
 	(void)m_hooks.Pop(RELLCALLHOOK_ID(addrToHookDown));
 }
+
+CImage::~CImage()
+{
+	RELLCALLHOOK_ID* hook = NULL;
+	m_hooks.Find(NULL, &hook);
+	while (hook)
+	{
+		m_hooks.Pop(*hook);
+		if (!m_hooks.GetNext(*hook, &hook))
+			break;
+	}
+	NT_ASSERTMSG("NOT UNHOOKED ALL IMAGES! mem leak", m_hooks.GetSize());
+}

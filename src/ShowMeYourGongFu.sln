@@ -8,9 +8,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "InAppFuzzDbiModule", "InApp
 		{0BAD0E19-9310-4439-A3F9-63EAF42C8575} = {0BAD0E19-9310-4439-A3F9-63EAF42C8575}
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cronos", "..\minihypervisor\MiniHyperVisorProject\Cronos\Cronos.vcxproj", "{B6559A43-52B1-42F0-A76E-3C20430B4D33}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HyperVisor", "..\minihypervisor\MiniHyperVisorProject\HyperVisor\HyperVisor.vcxproj", "{EE8AEE65-453E-44C7-8E66-A92BEF8EFC07}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HyperVisor", "..\HyperVisor\HyperVisor.vcxproj", "{EE8AEE65-453E-44C7-8E66-A92BEF8EFC07}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -58,24 +56,6 @@ Global
 		{1FC93194-EB4B-41C2-8C77-DFF69DC7BF2B}.Release|x64.ActiveCfg = Release|x64
 		{1FC93194-EB4B-41C2-8C77-DFF69DC7BF2B}.Release|x64.Build.0 = Release|x64
 		{1FC93194-EB4B-41C2-8C77-DFF69DC7BF2B}.Release|x64.Deploy.0 = Release|x64
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|Mixed Platforms.ActiveCfg = Debug|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|Mixed Platforms.Build.0 = Debug|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|Mixed Platforms.Deploy.0 = Debug|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|Win32.ActiveCfg = Debug|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|Win32.Build.0 = Debug|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|Win32.Deploy.0 = Debug|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|x64.ActiveCfg = Debug|x64
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|x64.Build.0 = Debug|x64
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Debug|x64.Deploy.0 = Debug|x64
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|Mixed Platforms.ActiveCfg = Release|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|Mixed Platforms.Build.0 = Release|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|Mixed Platforms.Deploy.0 = Release|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|Win32.ActiveCfg = Release|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|Win32.Build.0 = Release|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|Win32.Deploy.0 = Release|Win32
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|x64.ActiveCfg = Release|x64
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|x64.Build.0 = Release|x64
-		{B6559A43-52B1-42F0-A76E-3C20430B4D33}.Release|x64.Deploy.0 = Release|x64
 		{EE8AEE65-453E-44C7-8E66-A92BEF8EFC07}.Debug|Mixed Platforms.ActiveCfg = Debug|Win32
 		{EE8AEE65-453E-44C7-8E66-A92BEF8EFC07}.Debug|Mixed Platforms.Build.0 = Debug|Win32
 		{EE8AEE65-453E-44C7-8E66-A92BEF8EFC07}.Debug|Mixed Platforms.Deploy.0 = Debug|Win32

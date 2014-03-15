@@ -14,9 +14,7 @@
 #include "Common/Constants.h"
 #include "../../Common/FastCall/FastCall.h"
 
-#include "../../minihypervisor/MiniHyperVisorProject/HyperVisor/src/VmmAutoExit.hpp"
-
-bool x(ULONG_PTR a, const void* b) {return true;}
+#include "../../HyperVisor/src/VmmAutoExit.hpp"
 
 EXTERN_C void sysenter();
 EXTERN_C void rdmsr_hook();
@@ -94,6 +92,14 @@ KEVENT w8event;
 void CDbiMonitor::Install()
 {
 	ASSERT(CUndoc::IsInitialized());
+
+#ifdef _DEBUG_MODE
+	m_exceptionsMask = BTS(TRAP_debug);// | BTS(TRAP_page_fault);
+#else
+	m_exceptionsMask = BTS(TRAP_debug) | BTS(TRAP_int3);// | BTS(TRAP_page_fault);
+#endif
+
+	m_exceptionsMask = 0;
 	
 	if (CCRonos::EnableVirtualization())
 	{
@@ -116,7 +122,7 @@ void CDbiMonitor::Install()
 		}
 
 		KeBreak();
-		InstallPageFaultHooks();
+		//InstallPageFaultHooks();
 		DbgPrint("\n\n******************************************\n***** DBI FuzzFramework, installed!\n******************************************\n");
 	}
 }
@@ -215,16 +221,26 @@ EXTERN_C void* SysCallCallback(
 	__inout ULONG_PTR reg [REG_COUNT]
 	)
 {
-	//handle tracer fast-calls
-	HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
-	if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
+	if (CIRQL::SufficienIrql(APC_LEVEL))
 	{
-		CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id);
-		if (proc.IsReferenced() && proc.GetObj())
+		DbgPrint("\nIRQL OK!!\n");
+		//handle tracer fast-calls
+		HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
+		if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
 		{
-			if (proc.GetObj()->Syscall(reg))
-				return NULL;
+			DbgPrint("\nIRQL OK!!\n");
+			return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
+			CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id);
+			if (proc.IsReferenced() && proc.GetObj())
+			{
+				if (proc.GetObj()->Syscall(reg))
+					return NULL;
+			}
 		}
+	}
+	else
+	{
+		DbgPrint("\nINSUFFICIENT IRQL!!\n");
 	}
 	return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
 }
@@ -241,19 +257,20 @@ EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	//in kernelmode can cause another PF and skip recursion handling :P
-
-	//previous mode == usermode ?
-#define USER_MODE_CS 0x1
-	if (PPAGE_FAULT_IRET(reg)->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
+	if (UserMode == ExGetPreviousMode())
 	{
-		CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), PsGetCurrentProcessId());
-		if (proc.IsReferenced() && proc.GetObj())
+		//previous mode == usermode ?
+#define USER_MODE_CS 0x1
+		if (PPAGE_FAULT_IRET(reg)->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
 		{
-			BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
-			//DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
-			if (proc.GetObj()->PageFault(fault_addr, reg))
-				return NULL;
+			CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), PsGetCurrentProcessId());
+			if (proc.IsReferenced() && proc.GetObj())
+			{
+				BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
+				//DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
+				if (proc.GetObj()->PageFault(fault_addr, reg))
+					return NULL;
+			}
 		}
 	}
 	return CDbiMonitor::GetInstance().GetPFHandler(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
@@ -286,8 +303,10 @@ void CDbiMonitor::VMMEXCEPTION(
 		if (IsUserModeAddress(vmm_exit.GetIp()))
 		{
 			vmm_exit.SetIp(reinterpret_cast<const BYTE*>(vmm_exit.GetIp()) - vmm_exit.GetInsLen());
-			ULONG_PTR msr_btf_part;
-			if (!vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part))
+
+			EVmErrors status;
+			ULONG_PTR msr_btf_part = Instrinsics::VmRead(VMX_VMCS_GUEST_DEBUGCTL_FULL, &status);
+			if (VM_OK(status))
 			{
 				if (msr_btf_part & BTF)
 				{
@@ -315,7 +334,7 @@ void CDbiMonitor::VMMEXCEPTION(
 				{
 					trace_info->StateInfo.IRet.StackPointer = vmm_exit.GetSp();
 					trace_info->StateInfo.IRet.Return = const_cast<void*>(vmm_exit.GetIp());
-					trace_info->PrevEip = reinterpret_cast<const void*>(src);
+					trace_info->PrevEip = reinterpret_cast<void*>(src);
 					trace_info->StateInfo.IRet.Flags = vmm_exit.GetFlags();
 
 					//set eip to non-exec mem for quick recognization by PageFault handler
@@ -362,16 +381,18 @@ void CDbiMonitor::VMMWRMSR(
 	if (IA32_DEBUGCTL == reg[RCX])
 	{
 		//handle just dword-low
-		ULONG_PTR msr_btf_part;
-		vmread(VMX_VMCS_GUEST_DEBUGCTL_FULL, &msr_btf_part);
+		EVmErrors status;
+		ULONG_PTR msr_btf_part = Instrinsics::VmRead(VMX_VMCS_GUEST_DEBUGCTL_FULL, &status);
+		if (VM_OK(status))
+		{
+			if (reg[RAX] & BTF)
+				reg[RAX] |= msr_btf_part;//enable BTF + LBR
+			else
+				reg[RAX] &= msr_btf_part;//disable BTF + LBR
 
-		if (reg[RAX] & BTF)
-			reg[RAX] |= msr_btf_part;//enable BTF + LBR
-		else
-			reg[RAX] &= msr_btf_part;//disable BTF + LBR
-
-		vmwrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, reg[RAX]);
-		vmread(VMX_VMCS_GUEST_DEBUGCTL_HIGH, &reg[RDX]);
+			if (VM_OK(Instrinsics::VmWrite(VMX_VMCS_GUEST_DEBUGCTL_FULL, reg[RAX])))
+				reg[RDX] = Instrinsics::VmRead(VMX_VMCS_GUEST_DEBUGCTL_HIGH);
+		}
 	}
 
 	wrmsr(static_cast<ULONG>(reg[RCX]), (reg[RDX] << 32) | static_cast<ULONG>(reg[RAX]));
@@ -389,18 +410,20 @@ void CDbiMonitor::VMMCPUID(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	ULONG_PTR ExitReason;
-	vmread(VMX_VMCS32_RO_EXIT_REASON, &ExitReason);
-
-	if (VMX_EXIT_CPUID == ExitReason)
+	EVmErrors status;
+	ULONG_PTR ExitReason = Instrinsics::VmRead(VMX_VMCS32_RO_EXIT_REASON, &status);
+	if (VM_OK(status))
 	{
-		if (0xBADF00D0 == (ULONG)reg[RAX])
+		if (VMX_EXIT_CPUID == ExitReason)
 		{
-			reg[RBX] = 0xBADF00D0;
+			if (0xBADF00D0 == (ULONG)reg[RAX])
+			{
+				reg[RBX] = 0xBADF00D0;
 
-			ULONG_PTR rflags = 0;
-			vmread(VMX_VMCS_GUEST_RFLAGS, &rflags);
-			vmwrite(VMX_VMCS_GUEST_RFLAGS, (rflags | TRAP));
+				ULONG_PTR rflags = Instrinsics::VmRead(VMX_VMCS_GUEST_RFLAGS, &status);
+				if (VM_OK(status))
+					NT_ASSERT(VM_OK(Instrinsics::VmWrite(VMX_VMCS_GUEST_RFLAGS, (rflags | TRAP))));
+			}
 		}
 	}
 }
@@ -421,12 +444,15 @@ void CDbiMonitor::VMMRDMSR(
 	if (IA64_SYSENTER_EIP == reg[RCX])
 	{
 		syscall = reinterpret_cast<ULONG_PTR>(CDbiMonitor::GetInstance().GetSysCall(CVirtualizedCpu::GetCoreId(reg)));
-
-		ULONG_PTR ins_len;
-		vmread(VMX_VMCS32_RO_EXIT_INSTR_LENGTH, &ins_len);
-		vmread(VMX_VMCS64_GUEST_RIP, &reg[RCX]);//original 'ret'-addr
-
-		vmwrite(VMX_VMCS64_GUEST_RIP, rdmsr_hook);//.asm wrapper to RdmsrHook
+		
+		EVmErrors status;
+		ULONG_PTR ins_len = Instrinsics::VmRead(VMX_VMCS32_RO_EXIT_INSTR_LENGTH, &status);
+		if (VM_OK(status))
+		{
+			reg[RCX] = Instrinsics::VmRead(VMX_VMCS64_GUEST_RIP, &status);
+			if (VM_OK(status))
+				NT_ASSERT(VM_OK(Instrinsics::VmWrite(VMX_VMCS64_GUEST_RIP, rdmsr_hook)));//.asm wrapper to RdmsrHook
+		}
 	}
 	else
 	{

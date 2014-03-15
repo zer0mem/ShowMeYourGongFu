@@ -193,6 +193,14 @@
   <ItemGroup>
     <MASM Include="amd64\ext_interface.asm" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\HyperVisor\HyperVisor.vcxproj">
+      <Project>{ee8aee65-453e-44c7-8e66-a92bef8efc07}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\DbiFuzzFrameworkR0\DbiFuzzFrameworkR0.vcxproj">
+      <Project>{0bad0e19-9310-4439-a3f9-63eaf42c8575}</Project>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />

@@ -11,6 +11,8 @@
 #include "../../Common/utils/AVL.hpp"
 #include "../../Common/utils/HashString.hpp"
 
+#include "stdlib.h"
+
 enum
 {
 	ExtWaitForDbiEvent,

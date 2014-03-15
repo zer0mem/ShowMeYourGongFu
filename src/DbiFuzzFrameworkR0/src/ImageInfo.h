@@ -25,6 +25,8 @@ public:
 		__in IMAGE_INFO* imageInfo 
 		);
 
+	~CImage();
+
 	bool SetUpNewRelHook(
 		__in void* addrToHook,
 		__in const void* addrOfHook

@@ -120,7 +120,7 @@ void CDbiMonitor::Install()
 		}
 
 		KeBreak();
-		//InstallPageFaultHooks();
+		InstallPageFaultHooks();
 		DbgPrint("\n\n******************************************\n***** DBI FuzzFramework, installed!\n******************************************\n");
 	}
 }
@@ -215,31 +215,28 @@ void CDbiMonitor::InstallPageFaultHooks()
 // Reason:    Intercepting SYSCALL instruction [ MSR hook ]
 // Parameter: register context, INOUT!
 //************************************
+size_t counter_sc = 0;
 EXTERN_C void* SysCallCallback( 
 	__inout ULONG_PTR reg [REG_COUNT]
 	)
 {
-	if (CIRQL::SufficienIrql(APC_LEVEL))
+	if (0 == (++counter_sc % 0x1000))
+		DbgPrint("\nSYSCALL!!");
+	//handle tracer fast-calls
+	HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
+	if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
 	{
-		DbgPrint("\nIRQL OK1!! %x\n", KeGetCurrentIrql());
-		//handle tracer fast-calls
-		HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
-		if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
+		//bit fuckup, necessary to review CAutoProcWorkerRef, in current state causing crash...
+		return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
+		CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id);
+		if (proc.IsReferenced() && proc.GetObj())
 		{
-			DbgPrint("\nIRQL OK2!!\n");
-			return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
-			CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id);
-			if (proc.IsReferenced() && proc.GetObj())
-			{
-				if (proc.GetObj()->Syscall(reg))
-					return NULL;
-			}
+			DbgPrint("!!!");
+			if (proc.GetObj()->Syscall(reg))
+				return NULL;
 		}
 	}
-	else
-	{
-		DbgPrint("\nINSUFFICIENT IRQL!!\n");
-	}
+
 	return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
 }
 
@@ -250,7 +247,8 @@ EXTERN_C void* SysCallCallback(
 // Returns:   EXTERN_C void*
 // Reason:    Intercepting PageFault event [ IDT hook ]
 // Parameter: register context, INOUT!
-//************************************
+	//************************************
+size_t counter_pf = 0;
 EXTERN_C void* PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
@@ -261,6 +259,10 @@ EXTERN_C void* PageFault(
 #define USER_MODE_CS 0x1
 		if (PPAGE_FAULT_IRET(reg)->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
 		{
+			if (0 == (++counter_pf % 0x100))
+				DbgPrint("\nPAGE FAULT");
+			//bit fuckup, necessary to review CAutoProcWorkerRef, in current state causing crash...
+			return CDbiMonitor::GetInstance().GetPFHandler(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
 			CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), PsGetCurrentProcessId());
 			if (proc.IsReferenced() && proc.GetObj())
 			{

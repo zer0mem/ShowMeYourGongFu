@@ -42,6 +42,7 @@ bool CProcess2Fuzz::WatchProcess(
 	UNICODE_STRING image_name;
 	if (createInfo->ImageFileName)
 	{
+		DbgPrint("\nWatchProcess %p", processId);
 		if (ResolveImageName(
 				createInfo->ImageFileName->Buffer, 
 				createInfo->ImageFileName->Length / sizeof(createInfo->ImageFileName->Buffer[0]), 
@@ -115,7 +116,7 @@ bool CProcess2Fuzz::PageFault(
 	__inout ULONG_PTR reg[REG_COUNT]
 	)
 {
-	ResolveThreads();
+	FilterOutOverlapedImages();
 	PFIRET* pf_iret = PPAGE_FAULT_IRET(reg);
 
 	if (PsGetCurrentProcessId() == m_processId)
@@ -668,7 +669,7 @@ bool CProcess2Fuzz::Syscall(
 	return CSYSCALL::Syscall(reg);
 }
 
-void CProcess2Fuzz::ResolveThreads()
+void CProcess2Fuzz::FilterOutOverlapedImages()
 {
 	if (m_processId == PsGetCurrentProcessId())
 	{
@@ -693,7 +694,6 @@ void CProcess2Fuzz::ResolveThreads()
 				{
 					m_unresolvedThreads.Pop(*thread_id);
 				}
-
 			} while(m_unresolvedThreads.GetNext(*thread_id, &thread_id));
 		}
 	}

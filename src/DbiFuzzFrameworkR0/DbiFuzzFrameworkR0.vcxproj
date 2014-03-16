@@ -239,8 +239,8 @@
     </Midl>
     <ClCompile>
       <WholeProgramOptimization>false</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir); $(ProjectDir);C:\Program Files (x86)\Windows Kits\8.0\Include\shared;C:\Program Files (x86)\Windows Kits\8.0\Include\km;C:\Program Files (x86)\Windows Kits\8.0\Include\um;C:\Program Files (x86)\Windows Kits\8.0\Include\km\crt;$(BASEDIR2K3)\inc\ddk\wnet;$(BASEDIR2K3)\inc\ifs\wnet;$(BASEDIR2K3)\inc\wnet;$(BASEDIR2K3)\inc\crt;</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>HYPERVISOR;WIN64; _WIN64; _M_AMD64; _AMD_64_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\src;$(SolutionDir);$(WindowsSdkDir)Include\shared;$(WindowsSdkDir)Include\km;$(WindowsSdkDir)Include\um;$(WindowsSdkDir)Include\km\crt;$(BASEDIR2K3)\inc\ddk\wnet;$(BASEDIR2K3)\inc\ifs\wnet;$(BASEDIR2K3)\inc\wnet;$(BASEDIR2K3)\inc\crt;%(AdditionalIncludeDirectories);</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_HYPERVISOR;WIN64; _WIN64; _M_AMD64; _AMD_64_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <IgnoreStandardIncludePath>true</IgnoreStandardIncludePath>
       <StringPooling>true</StringPooling>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -260,10 +260,10 @@
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <Link>
-      <AdditionalOptions>/safeseh:no %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/INTEGRITYCHECK /safeseh:no %(AdditionalOptions)</AdditionalOptions>
       <AdditionalDependencies>HyperVisor.lib;ntoskrnl.lib;hal.lib;libcmtd.lib;FltMgr.lib;procgrp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
-      <AdditionalLibraryDirectories>$(SolutionDir)lib-amd64\;C:\Program Files (x86)\Windows Kits\8.0\Lib\win7\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)lib-amd64\;$(WindowsSdkDir)Lib\winv6.3\km\x64;$(WindowsSdkDir)Lib\win7\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Native</SubSystem>

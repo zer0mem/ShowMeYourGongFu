@@ -56,7 +56,8 @@ public:
 	);
 
 protected:
-	void ResolveThreads();
+	//also keep on eye on stack page guard's, to do not touch!
+	void FilterOutOverlapedImages();
 
 	__checkReturn
 	bool VirtualMemoryCallback(

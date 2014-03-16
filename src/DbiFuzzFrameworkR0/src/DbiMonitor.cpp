@@ -221,18 +221,19 @@ EXTERN_C void* SysCallCallback(
 	)
 {
 	if (0 == (++counter_sc % 0x1000))
-		DbgPrint("\nSYSCALL!!");
+		DbgPrint("\nSYSCALL!! %p", CDbiMonitor::GetInstance().GetProcessWorker());
 	//handle tracer fast-calls
 	HANDLE proc_id = reinterpret_cast<HANDLE>(reg[DBI_FUZZAPP_PROC_ID]);
 	if (FAST_CALL == reg[DBI_SYSCALL] && PsGetCurrentProcessId() != proc_id)
 	{
 		//bit fuckup, necessary to review CAutoProcWorkerRef, in current state causing crash...
+		CAutoProcWorkerRef xzy(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id); //<- ehmm, this crash procesing ...
 		return CDbiMonitor::GetInstance().GetSysCall(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
-		CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id);
-		if (proc.IsReferenced() && proc.GetObj())
+		CAutoProcWorkerRef proc2fuzz(CDbiMonitor::GetInstance().GetProcessWorker(), proc_id);
+		if (proc2fuzz.IsReferenced() && proc2fuzz.GetObj())
 		{
 			DbgPrint("!!!");
-			if (proc.GetObj()->Syscall(reg))
+			if (proc2fuzz.GetObj()->Syscall(reg))
 				return NULL;
 		}
 	}
@@ -260,15 +261,16 @@ EXTERN_C void* PageFault(
 		if (PPAGE_FAULT_IRET(reg)->IRet.CodeSegment & USER_MODE_CS)//btf HV callback
 		{
 			if (0 == (++counter_pf % 0x100))
-				DbgPrint("\nPAGE FAULT");
+				DbgPrint("\nPAGE FAULT %p", CDbiMonitor::GetInstance().GetProcessWorker());
 			//bit fuckup, necessary to review CAutoProcWorkerRef, in current state causing crash...
+			//CAutoProcWorkerRef xzy(CDbiMonitor::GetInstance().GetProcessWorker(), PsGetCurrentProcessId());
 			return CDbiMonitor::GetInstance().GetPFHandler(static_cast<BYTE>(KeGetCurrentProcessorNumber()));
-			CAutoProcWorkerRef proc(CDbiMonitor::GetInstance().GetProcessWorker(), PsGetCurrentProcessId());
-			if (proc.IsReferenced() && proc.GetObj())
+			CAutoProcWorkerRef proc2fuzz(CDbiMonitor::GetInstance().GetProcessWorker(), PsGetCurrentProcessId());
+			if (proc2fuzz.IsReferenced() && proc2fuzz.GetObj())
 			{
 				BYTE* fault_addr = reinterpret_cast<BYTE*>(readcr2());
 				//DbgPrint("\nPageFault in monitored process %p %x\n", fault_addr, PsGetCurrentProcessId());
-				if (proc.GetObj()->PageFault(fault_addr, reg))
+				if (proc2fuzz.GetObj()->PageFault(fault_addr, reg))
 					return NULL;
 			}
 		}
